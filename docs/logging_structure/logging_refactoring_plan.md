@@ -125,23 +125,23 @@ def _log_payload(
 이번 패스에서는 이 리스크를 인지하고 테스트 환경변수를 명시적으로 세팅한다.
 app factory / settings bootstrap 분리는 다음 패스에서 검토한다.
 
-## 4.2 `/health` 성공 로그 emission skip
+## 4.2 `/health/live` 성공 로그 emission skip
 
 ### 현재 문제
 
 `uvicorn --no-access-log`는 access log만 끈다.  
-현재 FastAPI middleware는 `/health` 요청도 app-level JSON log로 남길 수 있다.
+현재 FastAPI middleware는 `/health/live` 요청도 app-level JSON log로 남길 수 있다.
 
 ### 변경 방향
 
-- `/health` 성공 응답은 request log emission을 skip한다.
+- `/health/live` 성공 응답은 request log emission을 skip한다.
 - 단, `x-request-id`, `x-trace-id` header 처리는 유지한다.
-- `/health`가 5xx 또는 exception이면 로그를 남긴다.
+- `/health/live`가 5xx 또는 exception이면 로그를 남긴다.
 
 예상 정책:
 
 ```python
-HEALTHCHECK_PATHS = {"/health"}
+HEALTHCHECK_PATHS = {"/health/live"}
 
 
 def should_skip_request_log(*, path: str, status_code: int) -> bool:
@@ -220,7 +220,7 @@ backend/app/platform/logging/http_middleware.py
 
 - 이번 패스에서는 behavior cleanup과 책임 경계 일부 정리만 한다.
 - middleware 분리는 diff를 키울 수 있다.
-- `/health` skip과 service context injection을 테스트로 보호한 뒤 다음 패스에서 진행한다.
+- `/health/live` skip과 service context injection을 테스트로 보호한 뒤 다음 패스에서 진행한다.
 
 ### 5.2 error stack policy gate 추가
 
@@ -253,13 +253,13 @@ backend/app/platform/logging/http_middleware.py
 - `JsonFormatter(service_context=...)`가 출력 JSON에 `service`, `env`, `version`을 넣는다.
 - `SERVICE_APP_NAME`, `SERVICE_APP_ENV`, `SERVICE_APP_VERSION`이 누락되면 configure/service-context 생성 단계에서 실패한다.
 
-## 6.2 `/health` logging skip 테스트
+## 6.2 `/health/live` logging skip 테스트
 
 검증할 것:
 
-- `/health` 성공 요청은 `request_completed` app-level JSON log를 남기지 않는다.
-- `/health` 성공 응답은 `x-request-id` header를 유지한다.
-- `/health` 실패/exception은 로그를 남기는 정책을 유지한다.
+- `/health/live` 성공 요청은 `request_completed` app-level JSON log를 남기지 않는다.
+- `/health/live` 성공 응답은 `x-request-id` header를 유지한다.
+- `/health/live` 실패/exception은 로그를 남기는 정책을 유지한다.
 
 ## 6.3 non-health logging 유지 테스트
 
@@ -282,8 +282,8 @@ Hermes 검토 반영 후 최종 순서:
 1. `JsonFormatter`가 `JsonLogServiceContext`를 생성자에서 받도록 변경한다.
 2. `configure_logging()`에서 service context를 1회 생성한다.
 3. formatter service context 주입 테스트를 추가/수정한다.
-4. `/health` 성공 로그 emission skip을 추가한다.
-5. `/health` skip 테스트를 추가한다.
+4. `/health/live` 성공 로그 emission skip을 추가한다.
+5. `/health/live` skip 테스트를 추가한다.
 6. `log_record_extra_*`를 `platform/logging/context/log_record_extras.py`로 이동한다.
 7. `shared/types/extra_types.py`에는 `JSONObject`, `JSONValue`만 남긴다.
 8. import를 정리한다.
@@ -295,8 +295,8 @@ Hermes 검토 반영 후 최종 순서:
 완료 조건:
 
 - `make ci` 통과
-- `/health` 성공 요청이 app-level JSON request log를 남기지 않음
-- `/health` 응답 header는 유지
+- `/health/live` 성공 요청이 app-level JSON request log를 남기지 않음
+- `/health/live` 응답 header는 유지
 - non-health 요청은 계속 JSON request log를 남김
 - service/env/version은 formatter 생성 시점에 주입됨
 - `shared/types`는 타입 alias만 담당

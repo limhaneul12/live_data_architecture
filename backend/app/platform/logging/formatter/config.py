@@ -251,8 +251,14 @@ def configure_logging() -> None:
         )
         root_logger.addHandler(handler)
 
-    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for logger_name in ("uvicorn", "uvicorn.error"):
         uvicorn_logger = logging.getLogger(logger_name)
         for existing_handler in uvicorn_logger.handlers[:]:
             uvicorn_logger.removeHandler(existing_handler)
         uvicorn_logger.propagate = True
+
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    for existing_handler in uvicorn_access_logger.handlers[:]:
+        uvicorn_access_logger.removeHandler(existing_handler)
+    uvicorn_access_logger.propagate = False
+    uvicorn_access_logger.disabled = True

@@ -31,8 +31,8 @@ backend/app/shared/serialization/orjson_codec.py
 - `LogRecord`를 `JsonLogPayload` Pydantic 모델로 변환한 뒤 `orjson`으로 출력합니다.
 - `JsonLogPayload`는 내부적으로 service/trace/http/error context로 나뉘고, stdout JSON은 flat 구조로 출력합니다.
 - `SERVICE_APP_NAME`, `SERVICE_APP_ENV`, `SERVICE_APP_VERSION`은 필수 env입니다.
-- `/health` endpoint가 있습니다.
-- uvicorn access log는 꺼져 있지만 app middleware JSON log는 `/health`도 찍을 가능성이 있습니다.
+- `/health/live` endpoint가 있습니다.
+- uvicorn access log는 꺼져 있지만 app middleware JSON log는 `/health/live`도 찍을 가능성이 있습니다.
 - `backend/app/shared/types/extra_types.py`에는 현재 `JSONObject`, `JSONValue`와 함께 `LogRecord` extra extraction helper들이 같이 있습니다.
 
 ---
@@ -203,7 +203,7 @@ StrictInt
   "request_id": "...",
   "trace_id": "...",
   "http_method": "GET",
-  "path": "/health",
+  "path": "/health/live",
   "status_code": 200,
   "error": null
 }
@@ -217,13 +217,13 @@ StrictInt
 
 ---
 
-### 5. Add app-level `/health` logging skip
+### 5. Add app-level `/health/live` logging skip
 
-현재 uvicorn access log는 꺼졌지만, FastAPI middleware에서 `/health`도 `log_request_outcome()`를 탈 수 있음.
+현재 uvicorn access log는 꺼졌지만, FastAPI middleware에서 `/health/live`도 `log_request_outcome()`를 탈 수 있음.
 
 변경 후:
 
-- `/health` 요청은 app-level JSON request log emission을 skip.
+- `/health/live` 요청은 app-level JSON request log emission을 skip.
 - 단, response header는 유지:
   - `x-request-id`
   - `x-trace-id` if available
@@ -231,7 +231,7 @@ StrictInt
 예상 helper:
 
 ```python
-HEALTHCHECK_PATHS = {"/health"}
+HEALTHCHECK_PATHS = {"/health/live"}
 
 
 def should_skip_request_log(path: str) -> bool:
@@ -271,9 +271,9 @@ return response
 
 - `JsonFormatter(service_context=...)`로 만든 formatter가 출력 JSON에 service/env/version을 포함하는지 검증.
 
-#### C. `/health` request log skip
+#### C. `/health/live` request log skip
 
-- `/health` 요청 시 app-level `request_completed` log가 발생하지 않는지 검증.
+- `/health/live` 요청 시 app-level `request_completed` log가 발생하지 않는지 검증.
 - 단 `x-request-id` header는 여전히 존재해야 함.
 
 #### D. non-health request still logs
@@ -294,7 +294,7 @@ backend/app/platform/logging/http_middleware.py
 
 이유:
 
-- 먼저 behavior cleanup(`/health` skip, env one-time injection)을 안정화.
+- 먼저 behavior cleanup(`/health/live` skip, env one-time injection)을 안정화.
 - 테스트로 보호한 뒤 middleware 분리를 하면 리스크가 낮음.
 - 지금 동시에 옮기면 diff가 커질 수 있음.
 
@@ -342,8 +342,8 @@ backend/app/platform/logging/http_middleware.py
 3. Change `JsonFormatter` to receive `JsonLogServiceContext`.
 4. Create service context once in `configure_logging()`.
 5. Update tests for service context injection.
-6. Add `/health` log emission skip while preserving headers.
-7. Add test for `/health` no app-level request log.
+6. Add `/health/live` log emission skip while preserving headers.
+7. Add test for `/health/live` no app-level request log.
 8. Run `make ci`.
 9. Leave middleware extraction and stack policy for next cleanup pass.
 
@@ -354,7 +354,7 @@ backend/app/platform/logging/http_middleware.py
 Please review:
 
 1. Is this cleanup order safe?
-2. Should `/health` skip happen before or after service context injection?
+2. Should `/health/live` skip happen before or after service context injection?
 3. Is `record_extras.py` a good module name, or would `log_record_extras.py` / `extra_fields.py` be better?
 4. Is keeping Pydantic payload schema correct given future OpenTelemetry usage?
 5. Is keeping flat JSON output correct?

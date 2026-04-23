@@ -31,7 +31,7 @@ def _request_with_headers(headers: dict[str, str]) -> Request:
 
 def test_health_response_sets_request_id_when_missing() -> None:
     with TestClient(app) as client:
-        response = client.get("/health")
+        response = client.get("/health/live")
 
     assert response.status_code == 200
     assert response.headers.get("x-request-id")
@@ -39,7 +39,9 @@ def test_health_response_sets_request_id_when_missing() -> None:
 
 def test_health_response_keeps_existing_request_id() -> None:
     with TestClient(app) as client:
-        response = client.get("/health", headers={"x-request-id": "req-from-client"})
+        response = client.get(
+            "/health/live", headers={"x-request-id": "req-from-client"}
+        )
 
     assert response.status_code == 200
     assert response.headers.get("x-request-id") == "req-from-client"
@@ -48,7 +50,7 @@ def test_health_response_keeps_existing_request_id() -> None:
 def test_health_response_exposes_trace_id_header() -> None:
     with TestClient(app) as client:
         response = client.get(
-            "/health",
+            "/health/live",
             headers={"x-request-id": "req-1", "x-trace-id": "trace-1"},
         )
 
@@ -61,7 +63,7 @@ def test_health_success_does_not_emit_request_log(
     caplog,
 ) -> None:
     with TestClient(app) as client, caplog.at_level(logging.INFO):
-        response = client.get("/health")
+        response = client.get("/health/live")
 
     assert response.status_code == 200
     assert response.headers.get("x-request-id")
@@ -80,10 +82,10 @@ def test_non_health_request_still_emits_request_log(caplog) -> None:
 
 
 def test_health_logging_skip_policy_keeps_failure_signal() -> None:
-    assert should_skip_request_log(path="/health", status_code=200)
+    assert should_skip_request_log(path="/health/live", status_code=200)
     assert should_skip_request_log(path="/health/ready", status_code=503)
     assert should_skip_request_log(path="/health/heartbeat", status_code=503)
-    assert not should_skip_request_log(path="/health", status_code=500)
+    assert not should_skip_request_log(path="/health/live", status_code=500)
     assert not should_skip_request_log(path="/missing", status_code=200)
 
 

@@ -9,16 +9,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      DATABASE_DB_ADDRESS: postgresql://live_data:live_data@db:5432/live_data
     ports:
       - "8000:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
 
   db:
     image: postgres:16-alpine

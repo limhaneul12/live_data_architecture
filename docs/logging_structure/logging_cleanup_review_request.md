@@ -88,18 +88,18 @@ backend/tests/test_request_logging_headers.py
 - Creates FastAPI app.
 - Calls `configure_logging()`.
 - Defines request logging middleware inline.
-- Defines `/health` endpoint.
+- Defines `/health/live` endpoint.
 
 ## Current concerns to validate
 
 Please evaluate whether these concerns are correct, partially correct, or wrong.
 
-### Concern 1: `/health` app-level logging
+### Concern 1: `/health/live` app-level logging
 
-`uvicorn --no-access-log` is enabled, but the FastAPI middleware may still log `/health` through app-level JSON logging.
+`uvicorn --no-access-log` is enabled, but the FastAPI middleware may still log `/health/live` through app-level JSON logging.
 
 Question:
-- Should `/health` be skipped inside middleware?
+- Should `/health/live` be skipped inside middleware?
 - If yes, what is the cleanest minimal approach?
 
 ### Concern 2: required service env read per log

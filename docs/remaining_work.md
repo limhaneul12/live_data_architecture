@@ -16,7 +16,7 @@
 - schema 중앙화: `backend/app/platform/schemas/`
 - `orjson` 기반 JSON 직렬화 helper
 - request id / trace id logging 필드
-- `/health` 정상 요청 app-level logging skip
+- `/health/live` 정상 요청 app-level logging skip
 - `/health/live`, `/health/ready`, `/health/heartbeat`
 - process-local app lifecycle state
 - app 기준 수동 drain 상태 표현

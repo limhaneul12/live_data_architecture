@@ -13,7 +13,7 @@ DB/dependency 기반 운영 drain은 아직 구현하지 않는다.
 구현된 것:
 
 - process-local in-memory lifecycle state
-- `/health`
+- `/health/live`
 - `/health/live`
 - `/health/ready`
 - `/health/heartbeat`

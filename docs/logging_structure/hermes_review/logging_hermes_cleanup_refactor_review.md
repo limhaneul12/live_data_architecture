@@ -11,7 +11,7 @@
 - `shared/types`와 `platform/logging`의 책임을 분리하려는 방향이 명확합니다.
 - service metadata를 formatter hot path에서 빼려는 판단이 타당합니다.
 - Pydantic schema와 flat JSON output을 섣불리 뒤엎지 않고 유지합니다.
-- `/health`는 “middleware 전체 skip”이 아니라 “log emission만 skip”하려는 점이 좋습니다.
+- `/health/live`는 “middleware 전체 skip”이 아니라 “log emission만 skip”하려는 점이 좋습니다.
 - middleware extraction, stack policy 같은 추가 축은 defer해서 diff를 통제합니다.
 
 즉, “구조를 갈아엎는 계획”이 아니라 “운영 노이즈와 책임 경계를 먼저 정리하는 계획”이라서 적절합니다.
@@ -28,8 +28,8 @@
 3. `JsonFormatter` 생성자 변경
 4. `configure_logging()`에서 service context 1회 생성
 5. 테스트 업데이트
-6. `/health` skip 추가
-7. `/health` 테스트 추가
+6. `/health/live` skip 추가
+7. `/health/live` 테스트 추가
 8. `make ci`
 9. 나머지 defer
 
@@ -38,31 +38,31 @@
 권장 순서:
 1. service context 1회 생성 + `JsonFormatter` 주입 구조 먼저 변경
 2. 그 변경을 보호하는 테스트 추가/수정
-3. `/health` skip 추가
-4. `/health` 관련 테스트 추가
+3. `/health/live` skip 추가
+4. `/health/live` 관련 테스트 추가
 5. `log_record_extra_*`를 `record_extras.py`로 이동
 6. import 정리
 7. `make ci`
 
 이유:
 - `record_extras` 이동은 논리 변경이 거의 없는 구조 이동이라 언제 해도 됩니다.
-- 반면 service context 1회 생성과 `/health` skip은 실제 behavior 변경입니다.
+- 반면 service context 1회 생성과 `/health/live` skip은 실제 behavior 변경입니다.
 - behavior 변경을 먼저 테스트로 고정한 뒤, 구조 이동은 뒤로 보내는 편이 회귀 위험이 더 낮습니다.
 
 즉, 현재 순서도 safe하지만, “동작 변경 먼저, 파일 정리 나중” 순서가 더 reviewer-friendly합니다.
 
-### 2-2. Should `/health` skip happen before or after service context injection?
+### 2-2. Should `/health/live` skip happen before or after service context injection?
 
-service context injection 먼저, `/health` skip 나중을 권합니다.
+service context injection 먼저, `/health/live` skip 나중을 권합니다.
 
 이유:
 - service context injection은 formatter 내부의 구성/성능/책임 정리입니다.
-- `/health` skip은 request logging behavior 자체를 바꾸는 변경입니다.
+- `/health/live` skip은 request logging behavior 자체를 바꾸는 변경입니다.
 - 둘을 동시에 건드리면 로그 관련 테스트가 어디서 깨졌는지 구분이 약간 흐려질 수 있습니다.
 
 실무적으로는:
 - 먼저 formatter/service-context 변경을 고정
-- 그 다음 middleware behavior(`/health` skip)를 고정
+- 그 다음 middleware behavior(`/health/live` skip)를 고정
 이 순서가 디버깅과 리뷰에 유리합니다.
 
 다만 두 변경이 서로 강하게 얽혀 있지는 않아서, 큰 차이는 아닙니다. 우선순위만 정하자면 service context injection이 먼저입니다.
@@ -182,7 +182,7 @@ service context injection 먼저, `/health` skip 나중을 권합니다.
 
 - `shared/types/extra_types.py`에서 타입 alias와 logging-specific helper를 분리하려는 점
 - service metadata를 process-lifetime config로 취급하는 점
-- `/health`도 request id header는 유지하겠다는 점
+- `/health/live`도 request id header는 유지하겠다는 점
 - middleware extraction을 일부러 defer해서 diff를 제어하는 점
 - stack policy를 “지금 당장 제거”가 아니라 “정책화 필요”로 다루는 점
 - 테스트 항목을 behavior 중심으로 잡은 점
@@ -194,18 +194,18 @@ service context injection 먼저, `/health` skip 나중을 권합니다.
 - import-time validation risk를 명시
   - 이건 지금 계획의 가장 큰 숨은 리스크입니다.
 
-- `/health` skip 대상 범위 정의
-  - 현재는 `HEALTHCHECK_PATHS = {"/health"}` 제안인데, 향후 `/healthz`, `/ready`, `/live`가 생길 가능성이 있으면 naming만 조금 더 일반화해도 좋습니다.
-  - 물론 지금 단계에선 YAGNI를 지키는 것이 더 중요하니, 현재는 `/health`만 처리해도 충분합니다.
+- `/health/live` skip 대상 범위 정의
+  - 현재는 `HEALTHCHECK_PATHS = {"/health/live"}` 제안인데, 향후 `/healthz`, `/ready`, `/live`가 생길 가능성이 있으면 naming만 조금 더 일반화해도 좋습니다.
+  - 물론 지금 단계에선 YAGNI를 지키는 것이 더 중요하니, 현재는 `/health/live`만 처리해도 충분합니다.
 
-- `/health` 예외 케이스도 생각
+- `/health/live` 예외 케이스도 생각
   - “성공만 skip하고 실패는 남길지” 정책을 정하면 더 좋습니다.
   - 예를 들어 health endpoint가 500이 나도 로그를 완전히 생략할지, 아니면 실패는 남길지.
   - 제 추천은 실패 healthcheck는 남기는 쪽이 운영상 더 유익합니다.
   - 이건 현재 계획에서 빠진 꽤 중요한 운영 포인트입니다.
 
 - 테스트 방식 구체화
-  - `/health` no app-level request log 테스트는 단순 response assertion만으로는 부족합니다.
+  - `/health/live` no app-level request log 테스트는 단순 response assertion만으로는 부족합니다.
   - 실제로 log capture를 통해 `request_completed` 이벤트가 없는지 확인하는 방식이어야 의미가 있습니다.
   - 반대로 non-health request는 `request_completed` 또는 대응 이벤트가 찍히는지 확인해야 합니다.
 
@@ -215,15 +215,15 @@ service context injection 먼저, `/health` skip 나중을 권합니다.
 이 계획은 방향이 맞고, 바로 실행 가능한 수준입니다. 다만 아래 세 가지를 문서에 보강하면 더 좋아집니다.
 
 - `configure_logging()` import-time validation risk 명시
-- `/health` 실패 요청까지 무조건 skip할지 여부 명시
+- `/health/live` 실패 요청까지 무조건 skip할지 여부 명시
 - implementation order를 “behavior change 먼저, file move 나중” 쪽으로 약간 조정
 
 질문별 짧은 답은 아래와 같습니다.
 
 1. Is this cleanup order safe?
-- 네. 다만 service context injection과 `/health` behavior 변경을 먼저, `record_extras` 이동은 뒤로 두는 순서를 더 추천합니다.
+- 네. 다만 service context injection과 `/health/live` behavior 변경을 먼저, `record_extras` 이동은 뒤로 두는 순서를 더 추천합니다.
 
-2. Should `/health` skip happen before or after service context injection?
+2. Should `/health/live` skip happen before or after service context injection?
 - after. service context injection 먼저가 좋습니다.
 
 3. Is `record_extras.py` a good module name?

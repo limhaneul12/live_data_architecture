@@ -35,7 +35,7 @@
   "span_id": "00f067aa0ba902b7",
   "tracer_error": null,
   "http_method": "GET",
-  "path": "/health",
+  "path": "/health/live",
   "status_code": 200,
   "error": null
 }

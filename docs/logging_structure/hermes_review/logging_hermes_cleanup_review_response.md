@@ -7,7 +7,7 @@
 핵심 판단은 아래입니다.
 
 - 1) /health skip:
-  필요합니다. 현재 `backend/app/main.py:46-128`의 middleware는 모든 요청을 공통 로깅하므로 `/health`도 그대로 app-level JSON 로그에 남습니다. 운영 노이즈를 줄이려면 skip하는 쪽이 맞습니다.
+  필요합니다. 현재 `backend/app/main.py:46-128`의 middleware는 모든 요청을 공통 로깅하므로 `/health/live`도 그대로 app-level JSON 로그에 남습니다. 운영 노이즈를 줄이려면 skip하는 쪽이 맞습니다.
 - 2) SERVICE_APP_NAME / SERVICE_APP_ENV / SERVICE_APP_VERSION 매 로그 조회:
   “심각한 성능 문제” 수준은 아니지만 hot path에 계속 둘 이유가 없습니다. `backend/app/platform/logging/formatter/config.py:171-175`는 formatter 호출마다 env를 읽고 있어, startup 시 1회 검증 + formatter에 주입하는 쪽이 더 깔끔합니다.
 - 3) `shared/types/extra_types.py`에 LogRecord helper:
@@ -22,24 +22,24 @@
   좋은 절충입니다. 내부 모델은 유지하고, stdout 출력은 flat으로 두는 현재 방향이 실무적으로 가장 무난합니다.
 
 요약하면:
-가장 먼저 손볼 것은 `/health` 로그 제외와 `service context 1회 생성`이고,
+가장 먼저 손볼 것은 `/health/live` 로그 제외와 `service context 1회 생성`이고,
 유지할 것은 `Pydantic contract`와 `internal context 분리 + flat output`입니다.
 
 ## 2. Priority-ranked cleanup list
 
-### 1) `/health` app-level logging skip 추가
+### 1) `/health/live` app-level logging skip 추가
 판단: Correct  
 우선순위: 가장 높음
 
 근거:
 - 문서 요구사항에 이미 “healthcheck는 활성화하되 로그 출력은 피하고 싶음”이 명시되어 있습니다.
-- `backend/app/main.py:67-123`에서 모든 요청 성공/실패를 무조건 `log_request_outcome()` / `log_request_exception()`으로 남기고 있어서 `/health`도 예외가 아닙니다.
+- `backend/app/main.py:67-123`에서 모든 요청 성공/실패를 무조건 `log_request_outcome()` / `log_request_exception()`으로 남기고 있어서 `/health/live`도 예외가 아닙니다.
 - `uvicorn --no-access-log`는 access log만 끄는 것이고, 현재 middleware 로그는 별개입니다.
 
 리뷰 의견:
 - skip 필요합니다.
 - 다만 “middleware 전체를 건너뛰는” 식으로 처리하면 `x-request-id`, `x-trace-id` 헤더 부여 흐름까지 바뀔 수 있어서, 로깅 호출만 skip하는 식이 더 안전합니다.
-- 즉, `/health`도 request id/trace header는 유지하되 로그 emission만 생략하는 최소 접근이 가장 깔끔합니다.
+- 즉, `/health/live`도 request id/trace header는 유지하되 로그 emission만 생략하는 최소 접근이 가장 깔끔합니다.
 
 ### 2) service metadata env read를 매 로그마다 하지 않도록 변경
 판단: Correct  
@@ -185,7 +185,7 @@
 
 ## 5. Recommended order of changes
 
-1. `/health` 로그 skip 정책 확정
+1. `/health/live` 로그 skip 정책 확정
    - 가장 즉시 체감되는 운영 노이즈 감소 포인트입니다.
    - 최소 변경으로 효과가 큽니다.
 
@@ -227,7 +227,7 @@
 
 - 현재 테스트는 핵심 정책을 충분히 보호하지 못함
   - `backend/tests/test_logging_json.py`는 기본 필드와 error block만 보고 있습니다.
-  - `/health` 미로깅, env 1회 로드, stack policy, schema drift 방지 같은 cleanup 핵심 포인트를 아직 테스트가 보호하지 않습니다.
+  - `/health/live` 미로깅, env 1회 로드, stack policy, schema drift 방지 같은 cleanup 핵심 포인트를 아직 테스트가 보호하지 않습니다.
   - 지금은 리뷰만 요청하셨으니 수정 제안 수준으로만 남깁니다.
 
 - `main.py` middleware가 예외 응답 정책까지 함께 소유
@@ -235,4 +235,4 @@
   - 이게 의도라면 괜찮지만, 향후 FastAPI exception handler 전략과 중복/충돌 가능성은 체크해야 합니다.
 
 한 줄 결론:
-지금 구조는 “과하게 잘못 설계된 상태”는 아닙니다. 다만 `/health` 제외, service context 1회 생성, logging 책임 분리, stack 정책화 이 네 가지를 하면 훨씬 균형이 좋아집니다.
+지금 구조는 “과하게 잘못 설계된 상태”는 아닙니다. 다만 `/health/live` 제외, service context 1회 생성, logging 책임 분리, stack 정책화 이 네 가지를 하면 훨씬 균형이 좋아집니다.

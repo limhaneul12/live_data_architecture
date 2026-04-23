@@ -11,7 +11,7 @@ from fastapi import Request
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-HEALTHCHECK_PATHS = {"/health", "/health/live", "/health/ready", "/health/heartbeat"}
+HEALTHCHECK_PATHS = {"/health/live", "/health/ready", "/health/heartbeat"}
 _TRACEPARENT_VERSION_LENGTH = 2
 _TRACE_ID_LENGTH = 32
 _PARENT_ID_LENGTH = 16

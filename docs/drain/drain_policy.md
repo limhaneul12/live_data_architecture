@@ -47,7 +47,7 @@
 
 ## 4. endpoint 정책
 
-### 4.1 `/health`
+### 4.1 `/health/live`
 
 기존 호환용 endpoint다.
 
