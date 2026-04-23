@@ -1,0 +1,12 @@
+.git
+.gitignore
+.omx
+.venv
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.venv
+**/node_modules

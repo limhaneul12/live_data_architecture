@@ -1,0 +1,100 @@
+[project]
+name = "live-data-architecture-backend"
+version = "0.1.0"
+description = "Backend service for live data architecture"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi[all]>=0.136.0",
+  "opentelemetry-api>=1.39.0,<2",
+  "orjson>=3.10.0,<4",
+  "pydantic-settings>=2.14.0,<3",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.11.0",
+  "pyrefly>=0.18.0",
+]
+prod = []
+qa = ["pytest>=8.3.0"]
+stage = []
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["app"]
+extend-exclude = [
+  ".venv",
+  ".ruff_cache",
+  ".pytest_cache",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+  "C4",
+  "PIE",
+  "PERF",
+  "N",
+  "RUF",
+  "ARG",
+  "RET",
+  "PT",
+  "D",
+  "S",
+  "TRY",
+]
+ignore = [
+  "E501",
+  "B008",
+  "D100",
+  "D104",
+  "D105",
+  "D107",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"migrations/**/*.py" = ["D"]
+"tests/**/*.py" = ["D", "S101"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyrefly]
+python-version = "3.12"
+project-includes = ["app", "tests"]
+project-excludes = [
+  "**/__pycache__",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/.mypy_cache/**",
+  "**/.ruff_cache/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/.pytest_cache/**",
+  "**/.git/**",
+]
+search-path = ["app", "."]
+check-unannotated-defs = true
+infer-return-types = "checked"
+min-severity = "error"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--strict-markers"
+norecursedirs = [".venv", ".pytest_cache", ".ruff_cache", "node_modules"]
