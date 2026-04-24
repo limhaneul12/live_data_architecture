@@ -31,7 +31,8 @@
 
 - logging은 JSON formatter와 request/trace 상관관계까지만 유지합니다.
 - drain은 app 기준 상태 표현까지만 두고, 자동 drain은 제거했습니다.
-- DB/Redis 같은 운영 인프라는 실제 서비스 로직이 생긴 뒤 다시 판단하기로 했습니다.
+- Redis와 PostgreSQL은 이벤트 수집 경로에 포함되었으므로 health 응답의 dependency status로 노출합니다.
+- readiness/heartbeat 요청 시 Redis는 `PING`, PostgreSQL은 `SELECT 1`로 가벼운 ping-pong health check를 수행합니다.
 - `shared`에는 공용 타입/직렬화만 남기고, runtime 성격의 코드는 `platform`으로 옮겼습니다.
 
 상세한 설계 배경과 단계별 변경 내역은 아래 문서를 참고해 주시면 감사하겠습니다.
@@ -41,4 +42,58 @@
 - `docs/dev_timeline/2026_04_23/03_health_and_app_drain.md`
 - `docs/dev_timeline/2026_04_23/04_platform_and_shared_split.md`
 - `docs/dev_timeline/2026_04_23/05_config_and_docs_cleanup.md`
+- `docs/dev_timeline/2026_04_24/01_event_generator_step1.md`
+- `docs/dev_timeline/2026_04_24/02_event_payload_contract.md`
+- `docs/dev_timeline/2026_04_24/03_redis_stream_pipeline.md`
+- `docs/dev_timeline/2026_04_24/04_postgres_storage_and_alembic.md`
+- `docs/dev_timeline/2026_04_24/05_health_drain_docker_and_review.md`
 - `docs/remaining_work.md`
+
+## Step 1 이벤트 생성기
+
+과제의 첫 단계로 커머스 웹 서비스 이벤트를 랜덤하게 생성하는 독립 producer를 추가했습니다.
+
+```bash
+python -m event_generator --max-events 10 --seed 20260424 --no-sleep
+```
+
+로컬에서 `python`이 3.12 환경을 가리키지 않는 경우에는 기존 backend uv 환경으로 실행할 수 있습니다.
+
+```bash
+UV_PROJECT_ENVIRONMENT=../.venv uv run --project backend python -m event_generator --max-events 10 --seed 20260424 --no-sleep
+```
+
+이 생성기는 `page_view`, `product_click`, `add_to_cart`, `purchase`, `checkout_error` 이벤트를 stdout JSON Lines로 출력합니다. stdout은 이벤트 데이터만 담고, 시작/종료 요약은 stderr로 분리했습니다. JSON line 한 줄은 `schema_version=web_event.v1`을 포함하며 이후 MQ message body로 그대로 사용할 수 있는 raw event payload입니다.
+
+Redis Streams pipeline은 아래 흐름으로 구성했습니다.
+
+```text
+event_generator --sink redis
+  -> Redis Streams web.events.raw.v1
+  -> FastAPI lifespan background consumer
+  -> PostgreSQL events table batch insert
+```
+
+consumer는 HTTP route를 다시 호출하지 않고 backend 내부 `event_analytics` service/repository 로직을 직접 호출합니다. DB 저장은 한 건씩 insert하지 않고 batch insert 후 commit 성공 시 Redis message를 ack합니다.
+
+health 응답에는 Redis와 PostgreSQL dependency status도 포함합니다.
+
+```json
+{
+  "status": "ok",
+  "checks": {"app": "ok", "redis": "ok", "database": "ok"},
+  "reason": null
+}
+```
+
+Redis stream consumer가 비활성화된 로컬 기본 상태에서는 `redis=disabled`, `database=disabled`로 표시합니다. consumer가 활성화된 Docker Compose 실행에서는 Redis `PING`, consumer group 생성, PostgreSQL `SELECT 1`이 성공해야 각각 `ok`가 됩니다. drain 전환 시에는 Redis와 database status도 `draining`으로 함께 내려가도록 맞췄습니다.
+
+이벤트 타입, 필드 구성, 설계 이유, 실행 옵션은 아래 문서를 기준으로 합니다.
+
+- `event_generator/README.md`
+- `docs/event_generator/step1_summary.md`
+- `docs/event_generator/step2_log_storage_plan.md`
+- `docs/event_generator/mq_event_payload_contract.md`
+- `docs/event_generator/redis_streams_pipeline_implementation_plan.md`
+- `docs/event_generator/event_generator_design.md`
+- `docs/event_generator/event_generator_implementation_plan.md`

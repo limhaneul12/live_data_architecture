@@ -6,7 +6,7 @@
 ## 1. 목적
 
 이 문서는 backend 앱 자체가 언제 정상 상태이고 언제 새 트래픽에서 빠져야 하는지를 정의한다.
-현재 단계에서는 DB/외부 dependency 상태를 포함하지 않고 **app 기준 drain**까지만 다룬다.
+현재 단계에서는 app lifecycle을 기준으로 drain을 판단하되, 이벤트 수집 경로에 포함된 Redis와 PostgreSQL은 health 응답의 dependency status로 함께 노출한다.
 
 핵심 의도:
 
@@ -25,11 +25,12 @@
 - `/health/ready`
 - `/health/heartbeat`
 - app 기준 running/draining/stopping 상태 표현
+- Redis dependency status 표현 (`disabled`, `starting`, `ok`, `draining`, `unavailable`)
+- PostgreSQL database dependency status 표현 (`disabled`, `starting`, `ok`, `draining`, `unavailable`)
 - 정상 healthcheck request log skip
 
 현재 구현하지 않는다.
 
-- DB checker
 - unhandled exception threshold drain
 - lifecycle event history
 - 일반 요청 강제 503
@@ -37,11 +38,12 @@
 ## 3. 운영 인프라 전제
 
 현재 in-memory lifecycle 구현은 최종 운영 모델이 아니라 bootstrap 단계다.
-서비스가 DB 같은 운영 인프라를 도입하면 health, readiness, heartbeat 정책은 다시 검토한다.
+서비스가 DB 같은 운영 인프라를 더 깊게 도입하면 health, readiness, heartbeat 정책은 다시 검토한다.
 
 예상 역할:
 
-- DB: 영속 데이터, lifecycle/drain event history, 운영 audit, 장애 이력 조회
+- DB: 이벤트 영속 저장소. 현재는 readiness/heartbeat에서 `SELECT 1`이 성공하면 `ok`로 표시한다.
+- Redis: 이벤트 stream dependency. 현재는 readiness/heartbeat에서 `PING`과 consumer group 생성이 성공하면 `ok`로 표시한다.
 
 이번 범위에서는 외부 shared state나 자동 복구 메커니즘을 앱 코드에 넣지 않는다.
 
@@ -79,7 +81,7 @@ Running 상태:
 ```json
 {
   "status": "ok",
-  "checks": {"app": "ok"},
+  "checks": {"app": "ok", "redis": "ok", "database": "ok"},
   "reason": null
 }
 ```
@@ -89,7 +91,7 @@ Draining 상태:
 ```json
 {
   "status": "draining",
-  "checks": {"app": "draining"},
+  "checks": {"app": "draining", "redis": "draining", "database": "draining"},
   "reason": "manual"
 }
 ```
@@ -104,6 +106,8 @@ Running 상태:
 {
   "heartbeat": {
     "app": "ok",
+    "redis": "ok",
+    "database": "ok",
     "lifecycle": "running",
     "draining": false,
     "drain_reason": null,
@@ -119,6 +123,8 @@ Draining 상태:
 {
   "heartbeat": {
     "app": "draining",
+    "redis": "draining",
+    "database": "draining",
     "lifecycle": "draining",
     "draining": true,
     "drain_reason": "manual",
@@ -197,6 +203,6 @@ Unexpected health endpoint exception이나 의도하지 않은 5xx는 로그를 
 
 1. app lifecycle 상태를 process-local로 관리한다.
 2. ready는 app lifecycle 기준으로 판단한다.
-3. heartbeat는 app 상태만 노출한다.
-4. DB/dependency 상태는 아직 포함하지 않는다.
+3. heartbeat는 app 상태와 Redis/PostgreSQL dependency status를 노출한다.
+4. DB readiness checker는 `SELECT 1` 수준으로 포함한다.
 5. 500 error는 기록하지만 자동 drain하지 않는다.

@@ -30,3 +30,5 @@ class AppConfig(BaseSettings):
     app_version: str = Field()
     # Python logging level 이름.
     app_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field()
+    # local/demo 환경에서 Redis Stream consumer background task를 실행할지 여부.
+    event_consumer_enabled: bool = Field(default=False)

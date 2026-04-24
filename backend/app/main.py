@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from app.platform.config import AppConfig
+from app.event_analytics.interface.consumer_lifespan import (
+    EventConsumerRuntime,
+    start_event_consumer_runtime,
+)
+from app.platform.config import AppConfig, DatabaseConfig, StreamConfig
 from app.platform.health_router import install_health_routes
 from app.platform.lifecycle import LifecycleState
 from app.platform.logging import configure_logging
@@ -14,15 +19,16 @@ from app.platform.middleware import install_request_logging_middleware
 from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
+DEPENDENCY_HEALTH_TIMEOUT_SECONDS = 1.0
 
 
 def _docs_urls(app_env: str) -> tuple[str | None, str | None]:
     """현재 환경에서 Swagger UI와 ReDoc 노출 여부를 결정한다.
 
-    인자:
+    Args:
         app_env: 서비스 실행 환경 이름.
 
-    반환:
+    Returns:
         local 환경에서는 `("/docs", "/redoc")`, 그 외 환경에서는 `(None, None)`.
     """
     if app_env == "local":
@@ -33,10 +39,10 @@ def _docs_urls(app_env: str) -> tuple[str | None, str | None]:
 def _openapi_url(app_env: str) -> str | None:
     """현재 환경에서 OpenAPI 스키마 노출 여부를 결정한다.
 
-    인자:
+    Args:
         app_env: 서비스 실행 환경 이름.
 
-    반환:
+    Returns:
         local 환경에서는 `/openapi.json`, 그 외 환경에서는 `None`.
     """
     if app_env == "local":
@@ -47,29 +53,75 @@ def _openapi_url(app_env: str) -> str | None:
 def create_app(app_config: AppConfig) -> FastAPI:
     """FastAPI 애플리케이션을 생성한다.
 
-    인자:
+    Args:
         app_config: 서비스 공통 설정.
 
-    반환:
+    Returns:
         환경별 docs 정책이 적용된 FastAPI 애플리케이션.
     """
     lifecycle = LifecycleState()
+    event_consumer_runtime: EventConsumerRuntime | None = None
+
+    async def refresh_dependency_health() -> None:
+        """Refresh runtime dependency health before readiness responses.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        if event_consumer_runtime is None:
+            lifecycle.mark_database_disabled()
+            lifecycle.mark_redis_disabled()
+            return
+
+        await _refresh_database_health(
+            lifecycle=lifecycle,
+            runtime=event_consumer_runtime,
+        )
+        await _refresh_redis_health(
+            lifecycle=lifecycle,
+            runtime=event_consumer_runtime,
+        )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         """애플리케이션 시작 시 logging과 lifecycle을 설정한다.
 
-        인자:
+        Args:
             _app: FastAPI 애플리케이션 인스턴스.
 
-        Yields:
+        Returns:
             애플리케이션 lifespan 제어권.
         """
+        nonlocal event_consumer_runtime
         configure_logging()
+        if app_config.event_consumer_enabled:
+            lifecycle.mark_database_starting()
+            lifecycle.mark_redis_starting()
+            try:
+                event_consumer_runtime = await start_event_consumer_runtime(
+                    database_url=str(DatabaseConfig().db_address),
+                    stream_config=StreamConfig(),
+                )
+            except Exception:
+                lifecycle.mark_database_unavailable()
+                lifecycle.mark_redis_unavailable()
+                raise
+            lifecycle.mark_database_healthy()
+            lifecycle.mark_redis_healthy()
         lifecycle.mark_running()
         try:
             yield
         finally:
+            if event_consumer_runtime is not None:
+                lifecycle.mark_database_draining()
+                lifecycle.mark_redis_draining()
+                await event_consumer_runtime.stop()
+                lifecycle.mark_database_disabled()
+                lifecycle.mark_redis_disabled()
+                event_consumer_runtime = None
             lifecycle.mark_stopping()
 
     # local 환경에서만 문서와 OpenAPI 스키마를 노출한다.
@@ -82,8 +134,44 @@ def create_app(app_config: AppConfig) -> FastAPI:
         redoc_url=redoc_url,
     )
     install_request_logging_middleware(app, logger=logger)
-    install_health_routes(app, lifecycle=lifecycle)
+    install_health_routes(
+        app,
+        lifecycle=lifecycle,
+        refresh_dependency_health=refresh_dependency_health,
+    )
     return app
 
 
 app = create_app(AppConfig())
+
+
+async def _refresh_database_health(
+    *,
+    lifecycle: LifecycleState,
+    runtime: EventConsumerRuntime,
+) -> None:
+    try:
+        await asyncio.wait_for(
+            runtime.ping_database(),
+            timeout=DEPENDENCY_HEALTH_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        lifecycle.mark_database_unavailable()
+        return
+    lifecycle.mark_database_healthy()
+
+
+async def _refresh_redis_health(
+    *,
+    lifecycle: LifecycleState,
+    runtime: EventConsumerRuntime,
+) -> None:
+    try:
+        await asyncio.wait_for(
+            runtime.ping_redis(),
+            timeout=DEPENDENCY_HEALTH_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        lifecycle.mark_redis_unavailable()
+        return
+    lifecycle.mark_redis_healthy()

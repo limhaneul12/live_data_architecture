@@ -7,10 +7,55 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      DATABASE_DB_ADDRESS: postgresql://live_data:live_data@db:5432/live_data
+      SERVICE_EVENT_CONSUMER_ENABLED: "true"
+      STREAM_REDIS_URL: redis://redis:6379/0
+      STREAM_REDIS_MODE: single
+      STREAM_BATCH_SIZE: "100"
+      STREAM_BLOCK_MS: "1000"
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
+
+  event-generator:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: lda-event-generator
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    command:
+      - .venv/bin/python
+      - -m
+      - event_generator
+      - --sink
+      - redis
+      - --producer-id
+      - producer_compose
+    environment:
+      STREAM_REDIS_URL: redis://redis:6379/0
+
+  redis:
+    image: redis:7-alpine
+    container_name: lda-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   db:
     image: postgres:16-alpine
@@ -21,7 +66,7 @@ services:
       POSTGRES_USER: live_data
       POSTGRES_PASSWORD: live_data
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -33,3 +78,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

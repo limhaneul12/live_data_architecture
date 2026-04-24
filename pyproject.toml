@@ -1,0 +1,25 @@
+[tool.pyrefly]
+python-version = "3.12"
+project-includes = ["backend/app", "backend/tests", "event_generator"]
+project-excludes = [
+  "**/__pycache__",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/.mypy_cache/**",
+  "**/.ruff_cache/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/.pytest_cache/**",
+  "**/.git/**",
+]
+search-path = ["backend", "."]
+check-unannotated-defs = true
+infer-return-types = "checked"
+min-severity = "error"
+
+[tool.pytest.ini_options]
+pythonpath = ["backend", "."]
+testpaths = ["backend/tests", "event_generator/tests"]
+python_files = ["test_*.py"]
+addopts = "--strict-markers"
+norecursedirs = [".venv", ".pytest_cache", ".ruff_cache", "node_modules"]

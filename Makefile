@@ -1,8 +1,9 @@
 PYTHON_VERSION := 3.12.10
-CHECK_PATHS := backend/app backend/tests
-TEST_PATHS := backend/tests
-TYPECHECK_PATHS := backend/app backend/tests
+CHECK_PATHS := backend/app backend/tests event_generator
+TEST_PATHS := backend/tests event_generator/tests
+TYPECHECK_PATHS := backend/app backend/tests event_generator
 UV := UV_PROJECT_ENVIRONMENT=../.venv uv
+RUFF_CONFIG := backend/pyproject.toml
 
 .PHONY: install-local install install-prod install-qa install-stage \
 	format format_check type_checking guardrails test ci \
@@ -25,12 +26,12 @@ install-stage:
 	$(UV) sync --project backend --only-group stage
 
 format:
-	$(UV) run --project backend ruff format $(CHECK_PATHS)
-	$(UV) run --project backend ruff check $(CHECK_PATHS) --fix
+	$(UV) run --project backend ruff format --config $(RUFF_CONFIG) $(CHECK_PATHS)
+	$(UV) run --project backend ruff check --config $(RUFF_CONFIG) $(CHECK_PATHS) --fix
 
 format_check:
-	$(UV) run --project backend ruff format --check $(CHECK_PATHS)
-	$(UV) run --project backend ruff check $(CHECK_PATHS)
+	$(UV) run --project backend ruff format --check --config $(RUFF_CONFIG) $(CHECK_PATHS)
+	$(UV) run --project backend ruff check --config $(RUFF_CONFIG) $(CHECK_PATHS)
 
 type_checking:
 	$(UV) run --project backend pyrefly check $(TYPECHECK_PATHS)
@@ -55,11 +56,11 @@ db_init:
 	@echo "db_init target is reserved for database bootstrap integration."
 
 migrate db_upgrade:
-	@echo "Migration target is reserved for Alembic integration."
+	$(UV) run --project backend alembic -c backend/alembic.ini upgrade head
 
 makemigration db_revision:
 	@test -n "$(MESSAGE)" || (echo "Usage: MESSAGE='schema change' make makemigration" && exit 1)
-	@echo "Create migration revision: $(MESSAGE)"
+	$(UV) run --project backend alembic -c backend/alembic.ini revision --autogenerate -m "$(MESSAGE)"
 
 generate generator:
 	@test -n "$(word 2,$(MAKECMDGOALS))$(APP_NAME)" || (echo "Usage: make generate <domain> or make generate APP_NAME=<domain>" && exit 1)

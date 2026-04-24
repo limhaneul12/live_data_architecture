@@ -4,10 +4,14 @@ version = "0.1.0"
 description = "Backend service for live data architecture"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "alembic>=1.16,<2",
+  "asyncpg>=0.30.0,<1",
   "fastapi[all]>=0.136.0",
   "opentelemetry-api>=1.39.0,<2",
   "orjson>=3.10.0,<4",
   "pydantic-settings>=2.14.0,<3",
+  "redis>=5.2.0,<7",
+  "sqlalchemy[asyncio]>=2.0,<3",
 ]
 
 [dependency-groups]
@@ -61,7 +65,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/**/*.py" = ["D"]
+"backend/tests/**/*.py" = ["D", "S101"]
 "tests/**/*.py" = ["D", "S101"]
+"event_generator/tests/**/*.py" = ["D", "S101", "S603"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

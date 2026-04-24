@@ -1,6 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
-from app.platform.lifecycle import LifecycleState, LifecycleStatus
+from app.platform.lifecycle import (
+    DependencyHealthStatus,
+    LifecycleState,
+    LifecycleStatus,
+)
 
 
 def test_lifecycle_marks_running_from_starting() -> None:
@@ -10,6 +14,8 @@ def test_lifecycle_marks_running_from_starting() -> None:
 
     snapshot = state.snapshot()
     assert snapshot.status is LifecycleStatus.RUNNING
+    assert snapshot.redis_status is DependencyHealthStatus.DISABLED
+    assert snapshot.database_status is DependencyHealthStatus.DISABLED
     assert snapshot.ready
 
 
@@ -63,3 +69,43 @@ def test_lifecycle_does_not_recover_from_draining_by_mark_running() -> None:
 
     snapshot = state.snapshot()
     assert snapshot.status is LifecycleStatus.DRAINING
+
+
+def test_lifecycle_readiness_requires_healthy_redis_when_enabled() -> None:
+    state = LifecycleState(started_at=datetime(2026, 1, 1, tzinfo=UTC))
+    state.mark_running()
+
+    state.mark_redis_unavailable()
+
+    snapshot = state.snapshot()
+    assert snapshot.status is LifecycleStatus.RUNNING
+    assert snapshot.redis_status is DependencyHealthStatus.UNAVAILABLE
+    assert not snapshot.ready
+
+
+def test_start_draining_marks_healthy_dependencies_as_draining() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    state = LifecycleState(started_at=now)
+    state.mark_redis_healthy()
+    state.mark_database_healthy()
+    state.mark_running()
+
+    state.start_draining(reason="manual", now=now)
+
+    snapshot = state.snapshot()
+    assert snapshot.status is LifecycleStatus.DRAINING
+    assert snapshot.redis_status is DependencyHealthStatus.DRAINING
+    assert snapshot.database_status is DependencyHealthStatus.DRAINING
+    assert not snapshot.ready
+
+
+def test_lifecycle_readiness_requires_healthy_database_when_enabled() -> None:
+    state = LifecycleState(started_at=datetime(2026, 1, 1, tzinfo=UTC))
+    state.mark_running()
+
+    state.mark_database_unavailable()
+
+    snapshot = state.snapshot()
+    assert snapshot.status is LifecycleStatus.RUNNING
+    assert snapshot.database_status is DependencyHealthStatus.UNAVAILABLE
+    assert not snapshot.ready

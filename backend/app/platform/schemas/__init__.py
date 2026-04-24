@@ -1,13 +1,14 @@
 """플랫폼 Pydantic schema export 모듈."""
 
 from app.platform.schemas.health_schema import (
-    AppHealthCheckPayload,
     HealthPayloadModel,
     HeartbeatDetailsPayload,
     HeartbeatHealthPayload,
     LiveHealthPayload,
+    ReadyHealthChecksPayload,
     ReadyHealthPayload,
     app_check_from_status,
+    dependency_check_from_status,
     heartbeat_payload_from_snapshot,
     ready_payload_from_snapshot,
 )
@@ -21,7 +22,6 @@ from app.platform.schemas.logging_schema import (
 )
 
 __all__ = [
-    "AppHealthCheckPayload",
     "HealthPayloadModel",
     "HeartbeatDetailsPayload",
     "HeartbeatHealthPayload",
@@ -32,8 +32,10 @@ __all__ = [
     "JsonLogTraceContext",
     "JsonLoggingModel",
     "LiveHealthPayload",
+    "ReadyHealthChecksPayload",
     "ReadyHealthPayload",
     "app_check_from_status",
+    "dependency_check_from_status",
     "heartbeat_payload_from_snapshot",
     "ready_payload_from_snapshot",
 ]

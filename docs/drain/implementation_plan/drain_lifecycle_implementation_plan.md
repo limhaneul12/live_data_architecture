@@ -6,7 +6,7 @@
 ## 1. 목적
 
 이 문서는 현재 구현된 app 기준 drain/lifecycle 범위를 설명한다.
-DB/dependency 기반 운영 drain은 아직 구현하지 않는다.
+DB 기반 운영 drain 자동화는 아직 구현하지 않는다. 다만 이벤트 수집 경로의 Redis와 PostgreSQL dependency status는 health 응답에 포함한다.
 
 ## 2. 구현 범위
 
@@ -18,11 +18,12 @@ DB/dependency 기반 운영 drain은 아직 구현하지 않는다.
 - `/health/ready`
 - `/health/heartbeat`
 - app 기준 running/draining/stopping 상태 표현
+- Redis dependency status 표현
+- PostgreSQL database dependency status 표현
 - 정상 healthcheck request log skip
 
 구현하지 않은 것:
 
-- DB checker
 - unhandled exception threshold drain
 - lifecycle event log
 - 일반 요청 강제 503
@@ -50,21 +51,22 @@ backend/app/main.py
 
 - `started_at`
 - `status`
+- `redis_status`
+- `database_status`
 - `drain_started_at`
 - `drain_reason`
 
 저장하지 않는 값:
 
-- DB 상태
 - exception counter
 - sliding window
 - lifecycle event history
 
 ## 5. 미래 재검토 항목
 
-실제 서비스 로직과 DB가 들어오면 아래를 재검토한다.
+실제 서비스 로직과 운영 요구가 커지면 아래를 재검토한다.
 
-- DB readiness checker
+- DB readiness checker 심화 정책
 - short-lived failure counter
 - unhandled exception threshold drain
 - lifecycle/drain event history
@@ -77,7 +79,7 @@ backend/app/main.py
 
 - `make ci` 통과
 - `/health/live` 200
-- `/health/ready` running 200 / draining 503
-- `/health/heartbeat` app lifecycle 상태 포함
+- `/health/ready` running 200 / draining 503 / redis unavailable 503 / database unavailable 503
+- `/health/heartbeat` app lifecycle와 Redis/PostgreSQL dependency status 포함
 - 500 error가 lifecycle을 자동 변경하지 않음
 - 정상 healthcheck request log skip
