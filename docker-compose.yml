@@ -42,6 +42,21 @@ services:
     environment:
       STREAM_REDIS_URL: redis://redis:6379/0
 
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: lda-frontend
+    depends_on:
+      app:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      BACKEND_API_BASE_URL: http://app:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
   redis:
     image: redis:7-alpine
     container_name: lda-redis

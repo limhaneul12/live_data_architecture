@@ -10,3 +10,8 @@
 **/.mypy_cache
 **/.venv
 **/node_modules
+**/.next
+**/.vercel
+**/out
+**/build
+**/tsconfig.tsbuildinfo

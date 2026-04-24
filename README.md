@@ -179,3 +179,40 @@ Manual SQL 실행은 서버에서 parser 기반으로 제한합니다.
 - PostgreSQL read-only transaction으로 실행합니다.
 
 자세한 설계는 `docs/event_generator/step2_backend_analytics_design.md`를 참고하면 됩니다.
+
+## Step 5 Next.js 시각화 UI
+
+프론트엔드는 `frontend/` 아래 Next.js(TypeScript) 단일 페이지로 구성했습니다.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Docker Compose에서는 아래처럼 전체 stack을 실행합니다.
+
+```bash
+cp .env.example .env  # 로컬 .env가 없다면 먼저 생성
+docker compose up --build
+```
+
+프론트 화면은 `http://localhost:3000`에서 열립니다. UI 범위는 과제에 필요한 핵심만 둡니다.
+
+- generated view selector
+- preset SQL buttons
+- SQL textarea
+- Run SQL button
+- result table
+- chart preview (`bar`, `line`, `metric`, `table`)
+
+브라우저는 FastAPI를 직접 호출하지 않고 Next.js same-origin `/api/analytics/*` route handler를 호출합니다. 이 proxy가 `BACKEND_API_BASE_URL`로 backend에 요청하므로 로컬 기본값은 `http://localhost:8000`, Docker Compose 내부값은 `http://app:8000`입니다.
+
+Frontend 검증 명령은 아래입니다.
+
+```bash
+make frontend-ci
+cd frontend && npm audit --omit=dev --audit-level=moderate
+```
+
+Next.js App Router에서 interactivity가 필요한 SQL editor/workspace는 Client Component로 분리했습니다. 복잡한 dashboard 저장, 인증, query history는 v1 범위에서 제외했습니다.

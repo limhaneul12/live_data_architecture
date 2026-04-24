@@ -7,6 +7,7 @@ RUFF_CONFIG := backend/pyproject.toml
 
 .PHONY: install-local install install-prod install-qa install-stage \
 	format format_check type_checking guardrails test ci \
+	frontend-install frontend-lint frontend-typecheck frontend-build frontend-ci \
 	dev run db_init migrate db_upgrade makemigration db_revision \
 	generate generator compose-build compose-up compose-down compose-logs
 
@@ -45,6 +46,21 @@ test:
 	$(UV) run --project backend python -m pytest $(TEST_PATHS)
 
 ci: format_check type_checking guardrails test
+
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-lint:
+	cd frontend && npm run lint
+
+frontend-typecheck:
+	cd frontend && npm run typecheck
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-ci: frontend-lint frontend-typecheck frontend-build
 
 dev:
 	$(UV) run --project backend uvicorn app.main:app --reload --port 8000 --app-dir backend --no-access-log
