@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from app.event_analytics.application.ingest_events_usecase import IngestEventsUseCase
 from app.event_analytics.constants import EVENT_CONSUMER_ERROR_BACKOFF_SECONDS
 from app.event_analytics.domain.events import WebEvent
+from app.event_analytics.infrastructure.database_url import to_sqlalchemy_async_url
 from app.event_analytics.infrastructure.repositories.postgres_event_repository import (
     PostgresEventRepository,
 )
@@ -115,6 +116,9 @@ class EventStreamIngestionLoop:
             stream_consumer: Redis Stream adapter used to read and ack messages.
             usecase: Application use case used to persist valid events.
             error_backoff_seconds: Backoff seconds after stream or database failures.
+
+        Returns:
+            None.
         """
         self._stream_consumer = stream_consumer
         self._usecase = usecase
@@ -217,7 +221,7 @@ async def start_event_consumer_runtime(
     Returns:
         Running consumer runtime with owned Redis, DB, and task resources.
     """
-    engine = create_async_engine(_sqlalchemy_database_url(database_url))
+    engine = create_async_engine(to_sqlalchemy_async_url(database_url))
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     redis = build_async_redis_client(stream_config)
@@ -246,6 +250,14 @@ async def start_event_consumer_runtime(
 
 
 def _coerce_payload(payload: JSONObject) -> WebEvent | None:
+    """Validate and convert a stream payload into an internal event.
+
+    Args:
+        payload: Raw JSON object decoded from Redis Streams.
+
+    Returns:
+        Internal event dataclass, or None when validation fails.
+    """
     try:
         parsed = WebEventPayload.model_validate(payload)
     except ValidationError:
@@ -268,12 +280,6 @@ def _coerce_payload(payload: JSONObject) -> WebEvent | None:
     )
 
 
-def _sqlalchemy_database_url(database_url: str) -> str:
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return database_url
-
-
 async def ping_database_engine(engine: AsyncEngine) -> None:
     """Run the lightweight PostgreSQL health query used by startup/health probes.
 
@@ -292,6 +298,15 @@ async def _wait_for_stop_or_backoff(
     stop_event: asyncio.Event,
     seconds: float,
 ) -> None:
+    """Sleep for backoff unless shutdown is requested first.
+
+    Args:
+        stop_event: Event that signals graceful shutdown.
+        seconds: Maximum backoff duration.
+
+    Returns:
+        None.
+    """
     try:
         await asyncio.wait_for(stop_event.wait(), timeout=seconds)
     except TimeoutError:

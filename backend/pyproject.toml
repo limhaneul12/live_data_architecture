@@ -12,6 +12,7 @@ dependencies = [
   "pydantic-settings>=2.14.0,<3",
   "redis>=5.2.0,<7",
   "sqlalchemy[asyncio]>=2.0,<3",
+  "sqlglot>=28,<29",
 ]
 
 [dependency-groups]

@@ -7,9 +7,18 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
+from app.event_analytics.application.sql_query_service import SqlQueryService
+from app.event_analytics.infrastructure.database_url import to_sqlalchemy_async_url
+from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
+    PostgresAnalyticsQueryRepository,
+)
 from app.event_analytics.interface.consumer_lifespan import (
     EventConsumerRuntime,
     start_event_consumer_runtime,
+)
+from app.event_analytics.interface.router.analytics_router import (
+    install_analytics_routes,
 )
 from app.platform.config import AppConfig, DatabaseConfig, StreamConfig
 from app.platform.health_router import install_health_routes
@@ -17,6 +26,7 @@ from app.platform.lifecycle import LifecycleState
 from app.platform.logging import configure_logging
 from app.platform.middleware import install_request_logging_middleware
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 logger = logging.getLogger(__name__)
 DEPENDENCY_HEALTH_TIMEOUT_SECONDS = 1.0
@@ -61,6 +71,19 @@ def create_app(app_config: AppConfig) -> FastAPI:
     """
     lifecycle = LifecycleState()
     event_consumer_runtime: EventConsumerRuntime | None = None
+    analytics_engine = create_async_engine(
+        to_sqlalchemy_async_url(str(DatabaseConfig().db_address)),
+    )
+    analytics_session_factory = async_sessionmaker(
+        analytics_engine,
+        expire_on_commit=False,
+    )
+    analytics_query_service = SqlQueryService(
+        policy=AnalyticsSqlPolicy(),
+        repository=PostgresAnalyticsQueryRepository(
+            session_factory=analytics_session_factory,
+        ),
+    )
 
     async def refresh_dependency_health() -> None:
         """Refresh runtime dependency health before readiness responses.
@@ -122,6 +145,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
                 lifecycle.mark_database_disabled()
                 lifecycle.mark_redis_disabled()
                 event_consumer_runtime = None
+            await analytics_engine.dispose()
             lifecycle.mark_stopping()
 
     # local 환경에서만 문서와 OpenAPI 스키마를 노출한다.
@@ -139,6 +163,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
         lifecycle=lifecycle,
         refresh_dependency_health=refresh_dependency_health,
     )
+    install_analytics_routes(app, query_service=analytics_query_service)
     return app
 
 

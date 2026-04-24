@@ -25,6 +25,9 @@ class IngestEventsUseCase:
 
         Args:
             repository: Port used to persist validated event batches.
+
+        Returns:
+            None.
         """
         self._repository = repository
 

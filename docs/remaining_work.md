@@ -53,11 +53,11 @@
 
 권장 순서:
 
-1. 이벤트 생성기
-2. 저장 구조/스키마
-3. 집계 분석
-4. compose 기반 자동 실행
-5. 시각화
+1. 이벤트 생성기 — 완료 (`event_generator/`, `fect/event-generator`)
+2. 저장 구조/스키마 — 완료 (`events` table, generated views, `fect/step2-event-storage-analytics`)
+3. 집계 분석 — backend API 완료, frontend 연결 예정
+4. compose 기반 자동 실행 — Redis/PostgreSQL/backend/generator smoke 완료, frontend 추가 후 재검증 예정
+5. 시각화 — 다음 frontend branch에서 진행
 
 ### 3.2 DB 사용 방식 확정 이후 health 재검토
 
@@ -100,11 +100,11 @@ prod: error.stack 빈 문자열
 
 추천 순서:
 
-1. 이벤트 생성기
-2. 저장 구조/스키마
-3. 집계 분석
-4. compose 기반 자동 실행
-5. 시각화
+1. frontend branch 생성
+2. `/analytics/datasets`, `/analytics/presets`, `/analytics/query`를 사용하는 Next.js 화면 구현
+3. SQL 결과 table + chart preview 구현
+4. docker-compose에 frontend service 추가
+5. 전체 stack smoke 검증
 
 ## 5. 지금 당장 하지 않는 것이 좋은 작업
 

@@ -62,6 +62,9 @@ class PostgresEventRepository(EventRepository):
 
         Args:
             session_factory: Factory that creates SQLAlchemy async sessions.
+
+        Returns:
+            None.
         """
         self._session_factory = session_factory
 

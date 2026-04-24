@@ -97,3 +97,85 @@ Redis stream consumer가 비활성화된 로컬 기본 상태에서는 `redis=di
 - `docs/event_generator/redis_streams_pipeline_implementation_plan.md`
 - `docs/event_generator/event_generator_design.md`
 - `docs/event_generator/event_generator_implementation_plan.md`
+
+## Step 2 저장소와 스키마
+
+생성된 이벤트는 최종적으로 PostgreSQL `events` table에 저장합니다. Redis Streams는 저장소가 아니라 producer와 backend consumer 사이의 MQ 역할만 합니다.
+
+```text
+event_generator --sink redis
+  -> Redis Streams web.events.raw.v1
+  -> FastAPI lifespan background consumer
+  -> PostgreSQL events table
+```
+
+PostgreSQL을 선택한 이유는 과제 요구사항과 Step3 분석 흐름이 가장 자연스럽게 연결되기 때문입니다.
+
+- JSON payload를 통째로 저장하지 않고 컬럼으로 분리 저장할 수 있습니다.
+- 이벤트 타입별/유저별/시간대별 집계를 SQL로 바로 실행할 수 있습니다.
+- `event_id` primary key와 batch insert conflict-ignore로 중복 전달에 대응할 수 있습니다.
+- Docker Compose에서 app + DB 구성이 명확합니다.
+
+현재 저장 스키마는 아래와 같습니다.
+
+```sql
+CREATE TABLE events (
+  event_id TEXT PRIMARY KEY,
+  schema_version TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  user_id TEXT NOT NULL,
+  traffic_phase TEXT NOT NULL,
+  producer_id TEXT NOT NULL,
+  page_path TEXT NULL,
+  category_id TEXT NULL,
+  product_id TEXT NULL,
+  amount NUMERIC(12, 2) NULL,
+  currency TEXT NULL,
+  error_code TEXT NULL,
+  error_message TEXT NULL,
+  ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+분석/SQL UI에서 직접 조회할 대상은 raw `events` table이 아니라 아래 generated view allowlist입니다.
+
+- `event_type_counts`
+- `user_event_counts`
+- `hourly_event_counts`
+- `error_event_ratio`
+- `commerce_funnel_counts`
+- `product_event_counts`
+
+## Step 3 집계 분석 API
+
+Backend는 SQL 집계 결과를 프론트에서 사용할 수 있도록 아래 API를 제공합니다.
+
+```text
+GET  /analytics/datasets
+GET  /analytics/presets
+POST /analytics/query
+```
+
+예시 SQL:
+
+```sql
+SELECT event_type, event_count
+FROM event_type_counts
+ORDER BY event_count DESC, event_type;
+
+SELECT event_hour, event_type, event_count
+FROM hourly_event_counts
+ORDER BY event_hour, event_type;
+```
+
+Manual SQL 실행은 서버에서 parser 기반으로 제한합니다.
+
+- `SELECT`만 허용합니다.
+- 한 번에 statement 하나만 허용합니다.
+- raw `events` table 직접 조회는 거부합니다.
+- allowlisted generated view만 조회할 수 있습니다.
+- 결과 row는 최대 500개로 제한합니다.
+- PostgreSQL read-only transaction으로 실행합니다.
+
+자세한 설계는 `docs/event_generator/step2_backend_analytics_design.md`를 참고하면 됩니다.

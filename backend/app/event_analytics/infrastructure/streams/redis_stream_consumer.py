@@ -45,6 +45,9 @@ class RedisStreamEventConsumer:
         Args:
             redis: Redis client owned by the runtime lifecycle.
             stream_config: Batch read and blocking timeout configuration.
+
+        Returns:
+            None.
         """
         self._redis = redis
         self._stream_config = stream_config
@@ -96,7 +99,15 @@ class RedisStreamEventConsumer:
         stream_id: str,
         block_ms: int | None,
     ) -> list[StreamMessage]:
-        """Read and decode one Redis Stream batch for the requested stream id."""
+        """Read and decode one Redis Stream batch for the requested stream id.
+
+        Args:
+            stream_id: Redis stream read cursor, either pending or new id.
+            block_ms: Optional Redis blocking timeout.
+
+        Returns:
+            Decoded stream messages for the requested cursor.
+        """
         entries = cast(
             RedisReadGroupEntries,
             await self._redis.xreadgroup(
@@ -135,6 +146,14 @@ class RedisStreamEventConsumer:
 
 
 def _decode_payload(raw_fields: RedisStreamFields) -> JSONObject:
+    """Decode a Redis Stream payload field as a JSON object.
+
+    Args:
+        raw_fields: Raw Redis Stream field dictionary.
+
+    Returns:
+        Decoded JSON object, or an empty object when invalid.
+    """
     payload_value = raw_fields.get(b"payload") or raw_fields.get("payload")
     if payload_value is None:
         return {}
@@ -149,6 +168,14 @@ def _decode_payload(raw_fields: RedisStreamFields) -> JSONObject:
 
 
 def _decode_text(value: RedisText) -> str:
+    """Decode Redis bytes/str values into text.
+
+    Args:
+        value: Redis value returned as bytes or str.
+
+    Returns:
+        Decoded text value.
+    """
     if isinstance(value, bytes):
         return value.decode()
     return value

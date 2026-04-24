@@ -46,3 +46,26 @@ git diff --check
 ```
 
 push 후에는 backend Step2 브랜치에서 SQL 집계/분석 API/문서 보강을 진행하고, frontend 브랜치에서 Next.js 기반 SQL 입력/결과/차트 UI를 진행한다.
+
+## 실제 push 결과
+
+`fect/event-generator`는 아래 commit으로 push했다.
+
+```text
+5f74f59 Build a resilient event ingestion path
+origin/fect/event-generator
+```
+
+push 전 검증 결과:
+
+- `make ci` 통과
+- `docker compose config` 통과
+- `git diff --check` 통과
+- Compose E2E smoke 통과
+  - `/health/ready` -> app/redis/database 모두 `ok`
+  - generator 10건 Redis publish
+  - Redis `XLEN web.events.raw.v1` -> 10
+  - Redis `XPENDING web.events.raw.v1 event_analytics_writer` -> 0
+  - PostgreSQL `SELECT count(*) FROM events` -> 10
+
+이후 `fect/step2-event-storage-analytics` 브랜치를 새로 만들어 backend Step2/Step3 작업을 시작했다.
