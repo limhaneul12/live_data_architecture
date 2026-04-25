@@ -199,6 +199,13 @@ docker compose up --build
 
 프론트 화면은 `http://localhost:3000`에서 열립니다. UI 범위는 과제에 필요한 핵심만 둡니다.
 
+Compose의 PostgreSQL/Redis는 다른 로컬 프로젝트와 충돌하지 않도록 host port를 기본적으로 아래처럼 노출합니다. 컨테이너 내부 통신은 계속 `db:5432`, `redis:6379`를 사용합니다.
+
+```text
+PostgreSQL host port: 15432 -> container 5432
+Redis host port:      16379 -> container 6379
+```
+
 - generated view selector
 - preset SQL buttons
 - SQL textarea

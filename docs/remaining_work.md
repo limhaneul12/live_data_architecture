@@ -1,11 +1,13 @@
 # Remaining work
 
-작성일: 2026-04-24  
-대상: 실제 서비스 로직 구현 전, 현재 시점에서 남겨둔 후속 작업 정리
+작성일: 2026-04-25
+대상: 이벤트 생성 → 저장 → 분석 → 시각화 과제의 현재 남은 작업 정리
 
 ## 1. 현재 완료된 작업 요약
 
 아래 항목은 현재 완료된 것으로 봅니다.
+
+### 1.1 Backend foundation
 
 - Python 3.12.10 / uv / Makefile 기반 backend 환경 구성
 - Ruff / Pyrefly / pytest / guardrails를 포함한 `make ci`
@@ -29,97 +31,96 @@
 - `platform/`과 `shared/` 역할 분리
 - `platform/config`와 `pydantic-settings` 기반 설정 중앙화
 
+### 1.2 Assignment pipeline
+
+- Step 1 이벤트 생성기 — 완료 (`event_generator/`, `fect/event-generator`)
+- Step 2 저장 구조/스키마 — 완료 (`events` table, Redis Streams transport, FastAPI consumer, `fect/step2-event-storage-analytics`)
+- Step 3 집계 분석 — 완료 (`/analytics/datasets`, `/analytics/presets`, `/analytics/query`, generated views, SQL allowlist)
+- Step 4 Docker 실행 — 완료권 (`docker-compose.yml`에 app/db/redis/event-generator/frontend 포함)
+- Step 5 시각화 — 완료권 (`frontend/` Next.js SQL workspace, table + chart preview)
+
 ## 2. 현재 의도적으로 멈춘 범위
 
-현재는 운영 기반을 여기서 한 번 멈추고, 실제 서비스 로직으로 넘어가는 것이 맞다고 판단했습니다.
+과제 v1에서는 아래 범위를 의도적으로 제외합니다.
 
-의도적으로 하지 않는 것:
-
+- Superset급 dashboard builder
+- dashboard 저장 / query history
+- 인증 / 사용자별 권한
+- Kafka / Redpanda / Kafka Connect
+- OpenTelemetry exporter 연결
+- metric / alert 실제 도입
 - 500 error 기반 자동 drain
 - 일반 요청 강제 503 middleware
 - fatal exception taxonomy
-- DB checker 선구현
-- OpenTelemetry exporter 연결
-- metric / alert 실제 도입
+- automatic recovery
+- Redis/shared lifecycle coordination 고도화
 
-추가로, logging 내부 구조(`JsonLogServiceContext` 등)와 request logging 함수 시그니처는 현재 단계에서 더 줄이지 않고 유지합니다.  
-지금은 관측성 기초가 실제 서비스 로직보다 앞서가지 않도록 여기서 멈추는 편이 낫다고 판단했습니다.
+이유:
+
+- 과제 필수 요구사항은 작은 이벤트 파이프라인 구현과 SQL 집계 결과 시각화입니다.
+- 현재 구현은 generator → Redis Streams → FastAPI consumer → PostgreSQL → analytics API → Next.js visualization까지 핵심 흐름을 이미 충족합니다.
+- 위 항목을 지금 넣으면 제출 범위를 넘어 복잡도가 과하게 커집니다.
 
 ## 3. 실제로 남은 작업
 
-### 3.1 서비스 로직 구현
+### 3.1 제출용 README 최종 정리
 
-가장 우선순위가 높은 다음 작업입니다.
+README에서 아래를 더 명확하게 정리하면 제출 완성도가 올라갑니다.
 
-권장 순서:
+- Step 1~5 요구사항별 충족 위치
+- `docker compose up --build` 실행 방법
+- 기본 host port
+  - PostgreSQL: `15432 -> 5432`
+  - Redis: `16379 -> 6379`
+- 예시 SQL 2개 이상
+- 시각화 방식 설명
+- 안전한 SQL 제한 정책 요약
 
-1. 이벤트 생성기 — 완료 (`event_generator/`, `fect/event-generator`)
-2. 저장 구조/스키마 — 완료 (`events` table, generated views, `fect/step2-event-storage-analytics`)
-3. 집계 분석 — backend API 완료, frontend 연결 예정
-4. compose 기반 자동 실행 — Redis/PostgreSQL/backend/generator smoke 완료, frontend 추가 후 재검증 예정
-5. 시각화 — 다음 frontend branch에서 진행
+### 3.2 제출용 증빙 수집
 
-### 3.2 DB 사용 방식 확정 이후 health 재검토
+아래 증빙을 남기면 좋습니다.
 
-DB를 실제로 사용하게 되면 아래를 다시 봐야 합니다.
+- `docker compose up --build` 성공 로그
+- `GET /health/ready` 결과
+- event generator가 Redis로 이벤트를 보낸 로그
+- PostgreSQL `events` count 증가 확인
+- `/analytics/query` 결과
+- frontend 화면 스크린샷
+- SQL 실행 후 chart/table 표시 스크린샷
+- unsafe SQL이 400으로 거부되는 예시
 
-- DB connection / session / pool 방식
-- `/health/ready`에 DB 상태를 반영할지
-- `/health/heartbeat`에 DB 상태를 반영할지
-- DB fail이 readiness에 어떤 영향을 주는지
+### 3.3 브랜치/PR 정리
 
-### 3.3 Drain 상태에서 일반 요청 강제 503 여부
+현재 작업 브랜치는 아래 순서로 merge하는 것이 자연스럽습니다.
 
-현재 정책은 readiness 503으로만 새 트래픽에서 빠지는 방식입니다.
-실제 운영 라우팅 방식이 정해지면, non-health 요청을 앱 레벨에서 503으로 막을지 다시 판단해야 합니다.
+1. `fect/event-generator`
+2. `fect/step2-event-storage-analytics`
+3. `fect/frontend-event-analytics`
 
-### 3.4 Error stack 운영 정책 고도화
+`fect/frontend-event-analytics`는 Step2 backend branch 위에 쌓인 브랜치입니다.
 
-현재 구현:
+### 3.4 선택 보강
 
-```text
-local / stage: error.stack 포함
-prod: error.stack 빈 문자열
-```
+필수는 아니지만 제출 신뢰도를 더 올리고 싶으면 아래를 추가할 수 있습니다.
 
-운영 전에는 아래를 더 검토해야 합니다.
+- Playwright 기반 browser smoke test
+- frontend 스크린샷 자동 저장 스크립트
+- README에 제출용 이미지 경로 추가
+- chart preview 디자인 polish
 
-- stack 길이 제한
-- PII redaction
-- sampling
-- logger별 정책
-
-### 3.5 Git 정리 / commit
-
-현재 변경량이 크기 때문에, 실제 서비스 로직을 시작하기 전에 한 번 commit 단위를 정리하는 것이 좋습니다.
-
-## 4. 추천 다음 작업 순서
-
-현재 운영 foundation 관점에서는 여기서 잠시 멈추는 것이 맞습니다.
-이제는 observability 확장이 아니라 실제 서비스 로직으로 넘어가는 것을 권장합니다.
-
-추천 순서:
-
-1. frontend branch 생성
-2. `/analytics/datasets`, `/analytics/presets`, `/analytics/query`를 사용하는 Next.js 화면 구현
-3. SQL 결과 table + chart preview 구현
-4. docker-compose에 frontend service 추가
-5. 전체 stack smoke 검증
-
-## 5. 지금 당장 하지 않는 것이 좋은 작업
+## 4. 지금 당장 하지 않는 것이 좋은 작업
 
 아래는 지금 당장 하지 않는 것이 좋습니다.
 
-- DB checker 선구현
+- 인증
+- dashboard 저장
+- query history
+- Kafka / Redpanda 전환
+- Kafka Connect 유사 기능 구현
 - OpenTelemetry exporter 연결
 - metric / alert 시스템 도입
 - 500 error 기반 자동 drain 재도입
 - Redis/shared lifecycle coordination
 - automatic recovery
 
-이유:
-
-- 아직 실제 서비스 로직의 failure mode가 없습니다.
-- 아직 운영 스택과 오케스트레이션 정책이 확정되지 않았습니다.
-- 지금 구현하면 추상화나 설정이 앞서갈 가능성이 높습니다.
-- 현재는 app 기준 lifecycle과 최소 observability foundation을 안정화하는 단계입니다.
+현재는 과제 핵심 흐름을 제출 가능한 형태로 정리하는 것이 우선입니다.
