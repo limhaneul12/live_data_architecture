@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
+from app.event_analytics.constants import MAX_ANALYTICS_SQL_TEXT_LENGTH
 from app.event_analytics.domain.analytics_catalog import AnalyticsDataset, PresetQuery
 from app.event_analytics.domain.query_result import (
     AnalyticsQueryResult,
@@ -19,7 +20,10 @@ from pydantic import (
     StringConstraints,
 )
 
-NonEmptyText = Annotated[StrictStr, StringConstraints(min_length=1)]
+AnalyticsSqlText = Annotated[
+    StrictStr,
+    StringConstraints(min_length=1, max_length=MAX_ANALYTICS_SQL_TEXT_LENGTH),
+]
 ChartKindPayload = Literal["bar", "line", "table", "metric"]
 
 
@@ -86,7 +90,7 @@ class AnalyticsQueryRequest(AnalyticsPayloadModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    sql: NonEmptyText
+    sql: AnalyticsSqlText
     row_limit: StrictInt = Field(default=500, ge=1)
 
 

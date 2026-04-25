@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import cast
+from typing import Final, cast
 
 from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.domain.repositories.analytics_query_repository import (
@@ -17,6 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 type DatabaseScalar = str | int | float | bool | None | Decimal | datetime | date
 type DatabaseRow = dict[str, DatabaseScalar]
+
+ANALYTICS_STATEMENT_TIMEOUT_MS: Final = 3_000
+ANALYTICS_LOCK_TIMEOUT_MS: Final = 500
+ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT_MS: Final = 5_000
+ANALYTICS_SEARCH_PATH_SQL: Final = "public, pg_catalog"
 
 
 class AnalyticsQueryExecutionError(Exception):
@@ -50,7 +55,8 @@ class PostgresAnalyticsQueryRepository(AnalyticsQueryRepository):
         limited_sql = build_limited_select_sql(sql=sql)
         try:
             async with self._session_factory() as session, session.begin():
-                await session.execute(text("SET TRANSACTION READ ONLY"))
+                for guard_sql in build_analytics_runtime_guard_sql():
+                    await session.execute(text(guard_sql))
                 result = await session.execute(
                     text(limited_sql),
                     {"row_limit": row_limit},
@@ -77,6 +83,25 @@ def build_limited_select_sql(*, sql: str) -> str:
     # Safe by construction: `sql` is accepted only after parser-backed SELECT
     # validation and generated-view allowlist checks in AnalyticsSqlPolicy.
     return f"SELECT * FROM ({sql}) AS analytics_query LIMIT :row_limit"  # noqa: S608
+
+
+def build_analytics_runtime_guard_sql() -> tuple[str, ...]:
+    """Build PostgreSQL session guardrails for manual analytics SQL.
+
+    Args:
+        None.
+
+    Returns:
+        SQL statements that make the current transaction read-only and bounded.
+    """
+    return (
+        "SET TRANSACTION READ ONLY",
+        f"SET LOCAL search_path = {ANALYTICS_SEARCH_PATH_SQL}",
+        f"SET LOCAL statement_timeout = '{ANALYTICS_STATEMENT_TIMEOUT_MS}ms'",
+        f"SET LOCAL lock_timeout = '{ANALYTICS_LOCK_TIMEOUT_MS}ms'",
+        "SET LOCAL idle_in_transaction_session_timeout = "
+        f"'{ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT_MS}ms'",
+    )
 
 
 def row_mapping_to_json(*, row: DatabaseRow) -> JSONObject:

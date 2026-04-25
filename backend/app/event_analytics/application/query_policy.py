@@ -3,20 +3,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Final, Literal
 
 import sqlglot
 from app.event_analytics.application.analytics_catalog import ALLOWED_DATASET_NAMES
+from app.event_analytics.constants import MAX_ANALYTICS_SQL_TEXT_LENGTH
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
 MAX_QUERY_ROW_LIMIT = 500
+MAX_QUERY_TEXT_LENGTH: Final = MAX_ANALYTICS_SQL_TEXT_LENGTH
 
 SqlPolicyRejectionReason = Literal[
+    "query_too_long",
     "parse_error",
     "multiple_statements",
     "non_select_statement",
     "unsafe_cte",
+    "disallowed_cte",
+    "disallowed_subquery",
+    "disallowed_join",
+    "disallowed_function",
+    "disallowed_select_into",
+    "disallowed_locking_read",
+    "disallowed_offset",
+    "disallowed_distinct",
+    "disallowed_table_sample",
+    "disallowed_grouping",
+    "disallowed_ordinal_order",
     "cross_schema_relation",
     "unknown_relation",
     "missing_relation",
@@ -93,9 +107,11 @@ class AnalyticsSqlPolicy:
         Returns:
             Validated query with capped row limit and referenced relation set.
         """
+        _ensure_query_length(sql)
         expressions = _parse_one_statement(sql)
         expression = expressions[0]
         _ensure_select_only(expression)
+        _ensure_bounded_select_shape(expression)
         referenced_relations = _extract_referenced_relations(expression)
         _ensure_relations_are_allowlisted(
             referenced_relations=referenced_relations,
@@ -105,6 +121,22 @@ class AnalyticsSqlPolicy:
             sql=expression.sql(dialect="postgres"),
             referenced_relations=frozenset(referenced_relations),
             row_limit=min(requested_row_limit, self._max_row_limit),
+        )
+
+
+def _ensure_query_length(sql: str) -> None:
+    """Reject oversized SQL before parser work begins.
+
+    Args:
+        sql: Manual SQL text.
+
+    Returns:
+        None.
+    """
+    if len(sql) > MAX_QUERY_TEXT_LENGTH:
+        raise SqlPolicyViolationError(
+            reason="query_too_long",
+            message=f"analytics SQL은 {MAX_QUERY_TEXT_LENGTH}자 이하만 허용합니다.",
         )
 
 
@@ -152,6 +184,94 @@ def _ensure_select_only(expression: exp.Expression) -> None:
         raise SqlPolicyViolationError(
             reason="unsafe_cte",
             message="SELECT 내부에서도 데이터 변경 구문은 허용하지 않습니다.",
+        )
+
+
+def _ensure_bounded_select_shape(expression: exp.Expression) -> None:
+    """Reject read-only SQL shapes that can bypass the simple analytics boundary.
+
+    Args:
+        expression: Parsed SELECT expression.
+
+    Returns:
+        None.
+    """
+    if any(expression.find_all(exp.CTE)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_cte",
+            message="analytics SQL에서는 CTE를 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Subquery, exp.Lateral)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_subquery",
+            message="analytics SQL에서는 subquery/lateral query를 허용하지 않습니다.",
+        )
+
+    nested_selects = (
+        nested_select
+        for nested_select in expression.find_all(exp.Select)
+        if nested_select is not expression
+    )
+    if any(nested_selects):
+        raise SqlPolicyViolationError(
+            reason="disallowed_subquery",
+            message="analytics SQL에서는 subquery/lateral query를 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Join)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_join",
+            message="analytics SQL에서는 join을 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Into)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_select_into",
+            message="analytics SQL에서는 SELECT INTO를 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Lock)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_locking_read",
+            message="analytics SQL에서는 locking read를 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Offset)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_offset",
+            message="analytics SQL에서는 OFFSET을 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Distinct)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_distinct",
+            message="analytics SQL에서는 DISTINCT를 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.TableSample)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_table_sample",
+            message="analytics SQL에서는 TABLESAMPLE을 허용하지 않습니다.",
+        )
+
+    if any(expression.find_all(exp.Group)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_grouping",
+            message="analytics SQL에서는 GROUP BY를 허용하지 않습니다.",
+        )
+
+    for ordered in expression.find_all(exp.Ordered):
+        if isinstance(ordered.this, exp.Literal):
+            raise SqlPolicyViolationError(
+                reason="disallowed_ordinal_order",
+                message="analytics SQL에서는 ordinal ORDER BY를 허용하지 않습니다.",
+            )
+
+    if any(expression.find_all(exp.Func)):
+        raise SqlPolicyViolationError(
+            reason="disallowed_function",
+            message="analytics SQL에서는 함수 호출을 허용하지 않습니다.",
         )
 
 

@@ -1,4 +1,7 @@
-from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
+from app.event_analytics.application.query_policy import (
+    MAX_QUERY_TEXT_LENGTH,
+    AnalyticsSqlPolicy,
+)
 from app.event_analytics.application.sql_query_service import SqlQueryService
 from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.domain.repositories.analytics_query_repository import (
@@ -125,6 +128,35 @@ def test_query_endpoint_returns_400_for_raw_events_table() -> None:
 
     assert response.status_code == 400
     assert response.json()["rejected_reason"] == "unknown_relation"
+
+
+def test_query_endpoint_returns_400_for_read_only_function_attack() -> None:
+    client, _repository = build_client()
+
+    response = client.post(
+        "/analytics/query",
+        json={"sql": "SELECT pg_sleep(10), event_count FROM event_type_counts"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error_code": "sql_policy_violation",
+        "message": "analytics SQL에서는 함수 호출을 허용하지 않습니다.",
+        "rejected_reason": "disallowed_function",
+    }
+
+
+def test_query_endpoint_returns_422_for_oversized_sql_text() -> None:
+    client, _repository = build_client()
+
+    response = client.post(
+        "/analytics/query",
+        json={"sql": "x" * (MAX_QUERY_TEXT_LENGTH + 1)},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "string_too_long"
+    assert response.json()["detail"][0]["ctx"] == {"max_length": MAX_QUERY_TEXT_LENGTH}
 
 
 def test_query_endpoint_returns_503_when_database_execution_fails() -> None:
