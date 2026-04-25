@@ -688,12 +688,15 @@ td {
 
 .sql-lab-grid {
   display: grid;
+  align-items: start;
   grid-template-columns: minmax(0, 1.1fr) 320px;
   gap: 14px;
 }
 
 .sql-editor {
-  min-height: 360px;
+  height: clamp(180px, 24vh, 260px);
+  min-height: 160px;
+  max-height: 420px;
   padding: 16px;
   resize: vertical;
   background: var(--code);
