@@ -7,6 +7,9 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from app.event_analytics.application.analytics_connection import (
+    build_analytics_connection_info,
+)
 from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
 from app.event_analytics.application.sql_query_service import SqlQueryService
@@ -79,9 +82,14 @@ def create_app(app_config: AppConfig) -> FastAPI:
     lifecycle = LifecycleState()
     event_consumer_runtime: EventConsumerRuntime | None = None
     database_config = DatabaseConfig()
+    analytics_database_config = AnalyticsDatabaseConfig()
     analytics_database_address = resolve_analytics_database_address(
         database_config=database_config,
-        analytics_database_config=AnalyticsDatabaseConfig(),
+        analytics_database_config=analytics_database_config,
+    )
+    analytics_connection_info = build_analytics_connection_info(
+        database_config=database_config,
+        analytics_database_config=analytics_database_config,
     )
     analytics_engine = create_async_engine(
         to_sqlalchemy_async_url(str(analytics_database_address)),
@@ -183,6 +191,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
         app,
         query_service=analytics_query_service,
         explore_query_service=explore_query_service,
+        connection_info=analytics_connection_info,
     )
     return app
 

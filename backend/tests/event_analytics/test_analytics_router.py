@@ -4,6 +4,7 @@ from app.event_analytics.application.query_policy import (
     AnalyticsSqlPolicy,
 )
 from app.event_analytics.application.sql_query_service import SqlQueryService
+from app.event_analytics.domain.analytics_connection import AnalyticsConnectionInfo
 from app.event_analytics.domain.explore_query import ExploreQuery
 from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.domain.repositories.analytics_query_repository import (
@@ -64,8 +65,32 @@ def build_client(
             repository=query_repository,
         ),
         explore_query_service=ExploreQueryService(repository=query_repository),
+        connection_info=AnalyticsConnectionInfo(
+            database="postgresql",
+            address="postgresql://analytics_reader:***@localhost:15432/live_data",
+            source="analytics_read_only_dsn",
+            editable=False,
+            supported_databases=("postgresql",),
+            message="SQL Lab/Explore는 analytics read-only DB 주소를 사용합니다.",
+        ),
     )
     return TestClient(app), query_repository
+
+
+def test_connection_endpoint_returns_masked_current_database() -> None:
+    client, _repository = build_client()
+
+    response = client.get("/analytics/connection")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "database": "postgresql",
+        "address": "postgresql://analytics_reader:***@localhost:15432/live_data",
+        "source": "analytics_read_only_dsn",
+        "editable": False,
+        "supported_databases": ["postgresql"],
+        "message": "SQL Lab/Explore는 analytics read-only DB 주소를 사용합니다.",
+    }
 
 
 def test_datasets_endpoint_returns_views_only() -> None:

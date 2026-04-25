@@ -11,6 +11,11 @@ from app.event_analytics.domain.analytics_catalog import (
     ColumnKind,
     PresetQuery,
 )
+from app.event_analytics.domain.analytics_connection import (
+    AnalyticsConnectionInfo,
+    AnalyticsConnectionSource,
+    AnalyticsDatabaseKind,
+)
 from app.event_analytics.domain.explore_query import ExploreSortDirection
 from app.event_analytics.domain.query_result import (
     AnalyticsQueryResult,
@@ -21,6 +26,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     StrictInt,
     StrictStr,
     StringConstraints,
@@ -33,6 +39,8 @@ AnalyticsSqlText = Annotated[
 ChartKindPayload = Literal["bar", "line", "table", "metric", "pie"]
 ColumnKindPayload = ColumnKind
 ExploreSortDirectionPayload = ExploreSortDirection
+AnalyticsDatabaseKindPayload = AnalyticsDatabaseKind
+AnalyticsConnectionSourcePayload = AnalyticsConnectionSource
 
 
 class AnalyticsPayloadModel(BaseModel):
@@ -118,6 +126,39 @@ class PresetQueryPayload(AnalyticsPayloadModel):
             description=preset.description,
             sql=preset.sql,
             chart_kind=preset.chart_kind,
+        )
+
+
+class AnalyticsConnectionPayload(AnalyticsPayloadModel):
+    """Safe analytics database connection metadata returned to the frontend."""
+
+    database: AnalyticsDatabaseKindPayload
+    address: StrictStr
+    source: AnalyticsConnectionSourcePayload
+    editable: StrictBool
+    supported_databases: tuple[AnalyticsDatabaseKindPayload, ...]
+    message: StrictStr
+
+    @classmethod
+    def from_domain(
+        cls,
+        connection: AnalyticsConnectionInfo,
+    ) -> AnalyticsConnectionPayload:
+        """Build an API payload from internal analytics connection metadata.
+
+        Args:
+            connection: Internal password-masked connection metadata.
+
+        Returns:
+            Analytics connection payload for UI rendering.
+        """
+        return cls(
+            database=connection.database,
+            address=connection.address,
+            source=connection.source,
+            editable=connection.editable,
+            supported_databases=connection.supported_databases,
+            message=connection.message,
         )
 
 

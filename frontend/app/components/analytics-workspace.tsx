@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  type AnalyticsConnection,
   type ChartKind,
   type Dataset,
   type ExploreOrderDirection,
   type QueryResult,
+  fetchAnalyticsConnection,
   fetchDatasets,
   runAnalyticsQuery,
   runExploreQuery,
@@ -29,6 +31,7 @@ type QueryStatus = "idle" | "loading" | "success" | "error";
 
 export function AnalyticsWorkspace() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [connection, setConnection] = useState<AnalyticsConnection | null>(null);
   const [mode, setMode] = useState<WorkspaceMode>("explore");
   const [selectedDatasetName, setSelectedDatasetName] = useState("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -48,10 +51,14 @@ export function AnalyticsWorkspace() {
     async function loadInitialData() {
       setBootLoading(true);
       try {
-        const loadedDatasets = await fetchDatasets();
+        const [loadedConnection, loadedDatasets] = await Promise.all([
+          fetchAnalyticsConnection(),
+          fetchDatasets(),
+        ]);
         if (!mounted) {
           return;
         }
+        setConnection(loadedConnection);
         setDatasets(loadedDatasets);
         const defaultDataset = preferredDataset(loadedDatasets);
         if (defaultDataset !== undefined) {
@@ -215,6 +222,8 @@ export function AnalyticsWorkspace() {
                   <h2>Chart controls</h2>
                   <span>{datasets.length} tables</span>
                 </div>
+
+                <DatabaseConnectionPanel connection={connection} />
 
                 <label className="control-label" htmlFor="dataset-select">
                   Table
@@ -458,6 +467,57 @@ export function AnalyticsWorkspace() {
         </section>
       </div>
     </main>
+  );
+}
+
+function DatabaseConnectionPanel({
+  connection,
+}: {
+  connection: AnalyticsConnection | null;
+}) {
+  const databaseValue = connection?.database ?? "postgresql";
+  const addressValue =
+    connection?.address ?? "analytics database metadata is loading";
+  const sourceLabel =
+    connection?.source === "analytics_read_only_dsn"
+      ? "Read-only analytics DSN"
+      : "Writer DSN fallback";
+
+  return (
+    <section className="database-connection-card" aria-label="Database connection">
+      <div className="database-connection-title">
+        <span>Database</span>
+        <strong>{sourceLabel}</strong>
+      </div>
+
+      <label className="control-label compact" htmlFor="database-kind">
+        DB type
+      </label>
+      <select
+        id="database-kind"
+        className="superset-select"
+        value={databaseValue}
+        disabled
+      >
+        {(connection?.supported_databases ?? ["postgresql"]).map((database) => (
+          <option key={database} value={database}>
+            PostgreSQL
+          </option>
+        ))}
+      </select>
+
+      <label className="control-label compact" htmlFor="database-address">
+        Address
+      </label>
+      <input
+        id="database-address"
+        className="superset-input"
+        value={addressValue}
+        readOnly
+      />
+
+      <p>{connection?.message ?? "analytics DB 연결 정보를 불러오는 중입니다."}</p>
+    </section>
   );
 }
 

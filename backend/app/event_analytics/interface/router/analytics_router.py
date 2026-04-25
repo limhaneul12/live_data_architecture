@@ -12,10 +12,12 @@ from app.event_analytics.application.explore_query_service import (
 )
 from app.event_analytics.application.query_policy import SqlPolicyViolationError
 from app.event_analytics.application.sql_query_service import SqlQueryService
+from app.event_analytics.domain.analytics_connection import AnalyticsConnectionInfo
 from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
     AnalyticsQueryExecutionError,
 )
 from app.event_analytics.interface.analytics_schemas import (
+    AnalyticsConnectionPayload,
     AnalyticsDatasetPayload,
     AnalyticsQueryErrorPayload,
     AnalyticsQueryRequest,
@@ -31,6 +33,7 @@ def install_analytics_routes(
     app: FastAPI,
     query_service: SqlQueryService,
     explore_query_service: ExploreQueryService,
+    connection_info: AnalyticsConnectionInfo,
 ) -> None:
     """Install analytics API routes into the FastAPI application.
 
@@ -38,11 +41,24 @@ def install_analytics_routes(
         app: FastAPI application that owns the routes.
         query_service: Application service for validated analytics SQL execution.
         explore_query_service: Application service for structured Explore queries.
+        connection_info: Password-masked analytics database connection metadata.
 
     Returns:
         None.
     """
     router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+    @router.get("/connection")
+    def get_connection() -> AnalyticsConnectionPayload:
+        """Return the configured analytics database connection metadata.
+
+        Args:
+            None.
+
+        Returns:
+            Password-masked database connection metadata for UI display.
+        """
+        return AnalyticsConnectionPayload.from_domain(connection_info)
 
     @router.get("/datasets")
     def list_datasets() -> tuple[AnalyticsDatasetPayload, ...]:

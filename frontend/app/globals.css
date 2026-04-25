@@ -39,6 +39,7 @@ body {
 
 button,
 select,
+input,
 textarea {
   font: inherit;
 }
@@ -279,6 +280,7 @@ p {
 }
 
 .superset-select,
+.superset-input,
 .sql-editor {
   width: 100%;
   border: 1px solid var(--border);
@@ -292,6 +294,58 @@ p {
   padding: 0 10px;
   background: white;
   color: var(--text);
+}
+
+.superset-input {
+  height: 40px;
+  min-width: 0;
+  padding: 0 10px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.database-connection-card {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.database-connection-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.database-connection-title span {
+  color: var(--navy);
+  font-weight: 900;
+}
+
+.database-connection-title strong {
+  color: var(--success);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.control-label.compact {
+  margin-top: 10px;
+}
+
+.database-connection-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .control-row {
