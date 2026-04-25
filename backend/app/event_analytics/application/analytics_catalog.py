@@ -10,7 +10,7 @@ from app.event_analytics.domain.analytics_catalog import (
 )
 
 
-def column(*, name: str, label: str, kind: ColumnKind) -> AnalyticsDatasetColumn:
+def column(name: str, label: str, kind: ColumnKind) -> AnalyticsDatasetColumn:
     """Build a generated-view column descriptor.
 
     Args:

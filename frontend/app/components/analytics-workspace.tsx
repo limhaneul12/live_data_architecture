@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type ChartKind,
   type Dataset,
+  type ExploreOrderDirection,
   type PresetQuery,
   type QueryResult,
   fetchDatasets,
   fetchPresets,
   runAnalyticsQuery,
+  runExploreQuery,
 } from "../lib/api";
 import { ChartPreview } from "./chart-preview";
 import { ResultTable } from "./result-table";
@@ -19,6 +21,7 @@ const ROW_LIMIT_OPTIONS = [20, 50, 100, 500] as const;
 const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string }> = [
   { value: "bar", label: "Bar chart" },
   { value: "line", label: "Line chart" },
+  { value: "pie", label: "Donut chart" },
   { value: "metric", label: "Big number" },
   { value: "table", label: "Table" },
 ];
@@ -34,6 +37,8 @@ export function AnalyticsWorkspace() {
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [selectedChartKind, setSelectedChartKind] = useState<ChartKind>("bar");
   const [orderBy, setOrderBy] = useState("");
+  const [orderDirection, setOrderDirection] =
+    useState<ExploreOrderDirection>("desc");
   const [rowLimit, setRowLimit] = useState<number>(100);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [sqlLabSql, setSqlLabSql] = useState(DEFAULT_SQL);
@@ -100,9 +105,10 @@ export function AnalyticsWorkspace() {
       dataset: selectedDataset,
       selectedColumns,
       orderBy,
+      orderDirection,
       rowLimit,
     });
-  }, [orderBy, rowLimit, selectedColumns, selectedDataset]);
+  }, [orderBy, orderDirection, rowLimit, selectedColumns, selectedDataset]);
 
   const metadataLoaded = datasets.length > 0 && presets.length > 0;
   const statusLabel = bootLoading
@@ -126,10 +132,45 @@ export function AnalyticsWorkspace() {
     }
   }
 
+  async function runExplore() {
+    if (selectedDataset === undefined) {
+      setResult(null);
+      setError("실행할 dataset을 먼저 선택해주세요.");
+      setQueryStatus("error");
+      return;
+    }
+    setQueryStatus("loading");
+    setError(null);
+    try {
+      setResult(
+        await runExploreQuery({
+          dataset: selectedDataset.name,
+          columns: selectedExploreColumns({
+            dataset: selectedDataset,
+            selectedColumns,
+          }),
+          order_by: orderBy.length > 0 ? orderBy : null,
+          order_direction: orderDirection,
+          row_limit: rowLimit,
+        }),
+      );
+      setQueryStatus("success");
+    } catch (queryError) {
+      setResult(null);
+      setError(
+        queryError instanceof Error
+          ? queryError.message
+          : "Explore query 실행에 실패했습니다.",
+      );
+      setQueryStatus("error");
+    }
+  }
+
   function applyDatasetDefaults(dataset: Dataset) {
     setSelectedDatasetName(dataset.name);
     setSelectedColumns(defaultColumnsFor(dataset));
     setOrderBy(defaultOrderFor(dataset));
+    setOrderDirection(defaultOrderDirectionFor(dataset));
     setSelectedChartKind(defaultChartFor(dataset));
     setActivePreset(null);
   }
@@ -204,6 +245,7 @@ export function AnalyticsWorkspace() {
             <h2>Guardrails</h2>
             <ul className="guardrail-list">
               <li>generated view allowlist</li>
+              <li>Explore uses structured API</li>
               <li>single SELECT only</li>
               <li>no functions / joins / subqueries</li>
               <li>read-only transaction + timeout</li>
@@ -305,6 +347,25 @@ export function AnalyticsWorkspace() {
                     </select>
                   </div>
                   <div>
+                    <label className="control-label" htmlFor="order-direction">
+                      Direction
+                    </label>
+                    <select
+                      id="order-direction"
+                      className="superset-select"
+                      value={orderDirection}
+                      onChange={(event) =>
+                        setOrderDirection(
+                          event.target.value as ExploreOrderDirection,
+                        )
+                      }
+                      disabled={orderBy.length === 0}
+                    >
+                      <option value="desc">Descending</option>
+                      <option value="asc">Ascending</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="control-label" htmlFor="row-limit">
                       Row limit
                     </label>
@@ -343,7 +404,7 @@ export function AnalyticsWorkspace() {
                 <button
                   className="primary-button"
                   type="button"
-                  onClick={() => runSql(generatedSql)}
+                  onClick={() => void runExplore()}
                   disabled={bootLoading || queryStatus === "loading"}
                 >
                   {queryStatus === "loading" ? "Running..." : "Run chart"}
@@ -377,7 +438,10 @@ export function AnalyticsWorkspace() {
                   <div className="panel-header horizontal">
                     <div>
                       <h2>Generated SQL</h2>
-                      <p>Explore controls에서 생성된 제한 SQL입니다.</p>
+                      <p>
+                        실제 실행은 `/analytics/explore-query` structured API가
+                        처리하고, 아래 SQL은 preview입니다.
+                      </p>
                     </div>
                     <button
                       className="secondary-button"
@@ -443,7 +507,6 @@ export function AnalyticsWorkspace() {
               </aside>
 
               <div className="sql-lab-results">
-                <ChartPreview result={result} />
                 <ResultTable result={result} />
               </div>
             </section>
@@ -489,39 +552,57 @@ function defaultChartFor(dataset: Dataset): ChartKind {
   if (dataset.name === "error_event_ratio") {
     return "metric";
   }
+  if (dataset.name === "event_type_counts") {
+    return "pie";
+  }
   return "bar";
+}
+
+function defaultOrderDirectionFor(dataset: Dataset): ExploreOrderDirection {
+  if (dataset.name === "commerce_funnel_counts") {
+    return "asc";
+  }
+  return "desc";
 }
 
 function buildExploreSql({
   dataset,
   selectedColumns,
   orderBy,
+  orderDirection,
   rowLimit,
 }: {
   dataset: Dataset;
   selectedColumns: string[];
   orderBy: string;
+  orderDirection: ExploreOrderDirection;
   rowLimit: number;
 }): string {
   const validColumnNames = new Set(dataset.columns.map((column) => column.name));
-  const columns = selectedColumns.filter((column) => validColumnNames.has(column));
-  const projection = columns.length > 0 ? columns : defaultColumnsFor(dataset);
+  const projection = selectedExploreColumns({ dataset, selectedColumns });
   const lines = [
     `SELECT ${projection.map(formatIdentifier).join(", ")}`,
     `FROM ${formatIdentifier(dataset.name)}`,
   ];
   if (orderBy.length > 0 && validColumnNames.has(orderBy)) {
-    lines.push(`ORDER BY ${formatIdentifier(orderBy)}${orderSuffix(orderBy)}`);
+    lines.push(
+      `ORDER BY ${formatIdentifier(orderBy)} ${orderDirection.toUpperCase()}`,
+    );
   }
   lines.push(`LIMIT ${rowLimit}`);
   return lines.join("\n");
 }
 
-function orderSuffix(columnName: string): string {
-  if (columnName === "sort_order") {
-    return "";
-  }
-  return columnName.endsWith("_count") || columnName.endsWith("_ratio") ? " DESC" : "";
+function selectedExploreColumns({
+  dataset,
+  selectedColumns,
+}: {
+  dataset: Dataset;
+  selectedColumns: string[];
+}): string[] {
+  const validColumnNames = new Set(dataset.columns.map((column) => column.name));
+  const columns = selectedColumns.filter((column) => validColumnNames.has(column));
+  return columns.length > 0 ? columns : defaultColumnsFor(dataset);
 }
 
 function formatIdentifier(identifier: string): string {

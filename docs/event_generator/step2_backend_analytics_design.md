@@ -153,8 +153,11 @@ SELECT * FROM events;
   무거운 join/subquery, catalog 조회 같은 위험을 전부 막지는 못한다. 그래서
   validator에서 read-only attack surface도 보수적으로 차단하고 timeout을 적용한다.
 - production 수준으로 끌어올릴 경우 dedicated read-only DB role, schema 권한 분리,
-  statement cost 제한, SQL editor 대신 DSL/SQLAlchemy Core 기반 query builder를
-  추가로 검토해야 한다.
+  statement cost 제한을 추가로 검토해야 한다.
+- Explore 화면은 raw SQL 문자열 조립 대신 `/analytics/explore-query` structured API를
+  사용한다. 이 endpoint는 dataset/columns/order/limit만 입력으로 받고, backend에서
+  SQLAlchemy Core `select()`로 SQL을 생성한다. SQL Lab의 manual SQL 경로는 고급 확인용으로
+  남겨두되, 기본 chart 생성은 structured endpoint를 우선 사용한다.
 
 ## 6. Backend API
 
@@ -162,6 +165,7 @@ SELECT * FROM events;
 GET  /analytics/datasets
 GET  /analytics/presets
 POST /analytics/query
+POST /analytics/explore-query
 ```
 
 ### `GET /analytics/datasets`
@@ -239,14 +243,43 @@ POST /analytics/query
 }
 ```
 
+### `POST /analytics/explore-query`
+
+Superset-style Explore control에서 선택한 dataset/columns/order/limit을 실행한다.
+사용자 SQL 문자열을 받지 않고, backend가 catalog allowlist를 검증한 뒤 SQLAlchemy Core로
+SELECT statement를 생성한다.
+
+요청:
+
+```json
+{
+  "dataset": "event_type_counts",
+  "columns": ["event_type", "event_count"],
+  "order_by": "event_count",
+  "order_direction": "desc",
+  "row_limit": 100
+}
+```
+
+응답 shape는 `/analytics/query`와 동일하다.
+
+정책:
+
+- dataset은 `/analytics/datasets`에 노출된 generated view만 허용한다.
+- columns와 order_by는 해당 dataset의 column metadata에 있는 이름만 허용한다.
+- 중복 column은 거부한다.
+- row_limit은 최대 500개로 cap한다.
+- repository는 manual SQL과 동일하게 PostgreSQL read-only transaction / timeout guard를 적용한다.
+
 ## 7. Frontend 연결 의도
 
 frontend는 이 API만 바라본다.
 
 - `/analytics/datasets`로 table/view selector와 Explore column controls 구성
 - `/analytics/presets`로 preset 버튼 구성
-- `/analytics/query`로 generated SQL 또는 SQL Lab 입력 결과/차트 preview 구성
+- `/analytics/explore-query`로 Explore control 기반 chart/table 실행
+- `/analytics/query`로 SQL Lab 입력 결과 table 확인
 
 Superset처럼 복잡한 dashboard 저장/권한/drag-and-drop builder까지 만들지는 않는다. 대신
-Superset의 핵심 사용감인 “dataset 선택 → chart control 조정 → SQL/결과/차트 확인” 흐름을
+Superset의 핵심 사용감인 “dataset 선택 → chart control 조정 → 결과/차트 확인” 흐름을
 가볍게 구현해 과제의 핵심인 SQL 집계 결과 확인과 시각화에 집중한다.

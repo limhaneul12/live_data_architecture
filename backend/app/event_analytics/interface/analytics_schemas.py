@@ -11,6 +11,7 @@ from app.event_analytics.domain.analytics_catalog import (
     ColumnKind,
     PresetQuery,
 )
+from app.event_analytics.domain.explore_query import ExploreSortDirection
 from app.event_analytics.domain.query_result import (
     AnalyticsQueryResult,
     ChartSuggestion,
@@ -29,8 +30,9 @@ AnalyticsSqlText = Annotated[
     StrictStr,
     StringConstraints(min_length=1, max_length=MAX_ANALYTICS_SQL_TEXT_LENGTH),
 ]
-ChartKindPayload = Literal["bar", "line", "table", "metric"]
+ChartKindPayload = Literal["bar", "line", "table", "metric", "pie"]
 ColumnKindPayload = ColumnKind
+ExploreSortDirectionPayload = ExploreSortDirection
 
 
 class AnalyticsPayloadModel(BaseModel):
@@ -126,6 +128,18 @@ class AnalyticsQueryRequest(AnalyticsPayloadModel):
 
     sql: AnalyticsSqlText
     row_limit: StrictInt = Field(default=500, ge=1)
+
+
+class ExploreQueryRequest(AnalyticsPayloadModel):
+    """Structured Explore execution request."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    dataset: StrictStr
+    columns: list[StrictStr] = Field(min_length=1)
+    order_by: StrictStr | None = None
+    order_direction: ExploreSortDirectionPayload = "desc"
+    row_limit: StrictInt = Field(default=100, ge=1)
 
 
 class ChartSuggestionPayload(AnalyticsPayloadModel):

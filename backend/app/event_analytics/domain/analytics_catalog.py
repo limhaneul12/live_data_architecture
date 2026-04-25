@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-ChartKind = Literal["bar", "line", "table", "metric"]
+ChartKind = Literal["bar", "line", "table", "metric", "pie"]
 ColumnKind = Literal["dimension", "metric", "temporal"]
 
 

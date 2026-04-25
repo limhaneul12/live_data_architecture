@@ -7,7 +7,7 @@ from typing import Literal
 
 from app.shared.types import JSONObject
 
-ChartKind = Literal["bar", "line", "table", "metric"]
+ChartKind = Literal["bar", "line", "table", "metric", "pie"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -41,7 +41,7 @@ class FakeStreamConsumer:
 
 
 class FailingOnceStreamConsumer(FakeStreamConsumer):
-    def __init__(self, *, stop_event: asyncio.Event) -> None:
+    def __init__(self, stop_event: asyncio.Event) -> None:
         super().__init__([])
         self.stop_event = stop_event
         self.read_count = 0
@@ -55,7 +55,7 @@ class FailingOnceStreamConsumer(FakeStreamConsumer):
 
 
 class FakeUseCase:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False) -> None:
         self.fail = fail
         self.saved_events: list[WebEvent] = []
 

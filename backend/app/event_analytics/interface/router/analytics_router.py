@@ -6,6 +6,10 @@ from app.event_analytics.application.analytics_catalog import (
     get_datasets,
     get_preset_queries,
 )
+from app.event_analytics.application.explore_query_service import (
+    ExploreQueryService,
+    ExploreQueryValidationError,
+)
 from app.event_analytics.application.query_policy import SqlPolicyViolationError
 from app.event_analytics.application.sql_query_service import SqlQueryService
 from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
@@ -16,18 +20,24 @@ from app.event_analytics.interface.analytics_schemas import (
     AnalyticsQueryErrorPayload,
     AnalyticsQueryRequest,
     AnalyticsQueryResponse,
+    ExploreQueryRequest,
     PresetQueryPayload,
 )
 from fastapi import APIRouter, FastAPI, status
 from fastapi.responses import JSONResponse
 
 
-def install_analytics_routes(app: FastAPI, *, query_service: SqlQueryService) -> None:
+def install_analytics_routes(
+    app: FastAPI,
+    query_service: SqlQueryService,
+    explore_query_service: ExploreQueryService,
+) -> None:
     """Install analytics API routes into the FastAPI application.
 
     Args:
         app: FastAPI application that owns the routes.
         query_service: Application service for validated analytics SQL execution.
+        explore_query_service: Application service for structured Explore queries.
 
     Returns:
         None.
@@ -81,7 +91,7 @@ def install_analytics_routes(app: FastAPI, *, query_service: SqlQueryService) ->
             )
         except SqlPolicyViolationError as exc:
             return _query_error_response(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status.HTTP_400_BAD_REQUEST,
                 payload=AnalyticsQueryErrorPayload(
                     error_code="sql_policy_violation",
                     message=exc.message,
@@ -90,10 +100,50 @@ def install_analytics_routes(app: FastAPI, *, query_service: SqlQueryService) ->
             )
         except AnalyticsQueryExecutionError:
             return _query_error_response(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                status.HTTP_503_SERVICE_UNAVAILABLE,
                 payload=AnalyticsQueryErrorPayload(
                     error_code="analytics_database_unavailable",
                     message="analytics SQL을 실행할 수 없습니다.",
+                    rejected_reason=None,
+                ),
+            )
+        return AnalyticsQueryResponse.from_domain(result)
+
+    @router.post("/explore-query", response_model=None)
+    async def run_explore_query(
+        request: ExploreQueryRequest,
+    ) -> AnalyticsQueryResponse | JSONResponse:
+        """Execute one structured Explore query.
+
+        Args:
+            request: Dataset/columns/order controls selected by the frontend.
+
+        Returns:
+            Query result payload, validation rejection, or database error.
+        """
+        try:
+            result = await explore_query_service.execute(
+                dataset_name=request.dataset,
+                column_names=tuple(request.columns),
+                order_by=request.order_by,
+                order_direction=request.order_direction,
+                row_limit=request.row_limit,
+            )
+        except ExploreQueryValidationError as exc:
+            return _query_error_response(
+                status.HTTP_400_BAD_REQUEST,
+                payload=AnalyticsQueryErrorPayload(
+                    error_code="explore_query_violation",
+                    message=exc.message,
+                    rejected_reason=exc.reason,
+                ),
+            )
+        except AnalyticsQueryExecutionError:
+            return _query_error_response(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                payload=AnalyticsQueryErrorPayload(
+                    error_code="analytics_database_unavailable",
+                    message="analytics Explore query를 실행할 수 없습니다.",
                     rejected_reason=None,
                 ),
             )
@@ -103,7 +153,6 @@ def install_analytics_routes(app: FastAPI, *, query_service: SqlQueryService) ->
 
 
 def _query_error_response(
-    *,
     status_code: int,
     payload: AnalyticsQueryErrorPayload,
 ) -> JSONResponse:

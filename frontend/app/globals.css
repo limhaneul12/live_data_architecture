@@ -213,7 +213,8 @@ p {
 .saved-query-list,
 .metadata-list,
 .column-list,
-.bar-list {
+.bar-list,
+.donut-legend {
   display: grid;
   gap: 10px;
 }
@@ -360,7 +361,7 @@ p {
 
 .control-row {
   display: grid;
-  grid-template-columns: 1fr 110px;
+  grid-template-columns: minmax(0, 1fr) 130px 110px;
   gap: 10px;
 }
 
@@ -573,6 +574,50 @@ p {
   border-radius: 999px;
 }
 
+.donut-chart-wrap {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.donut-chart {
+  width: 100%;
+  max-width: 260px;
+  min-height: 220px;
+}
+
+.donut-total-label,
+.donut-total-value {
+  text-anchor: middle;
+  fill: var(--navy);
+}
+
+.donut-total-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.donut-total-value {
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.donut-legend .legend-item {
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.donut-legend .legend-item strong {
+  margin-left: auto;
+  color: var(--navy);
+}
+
 .chart-caption {
   margin: 8px 0 0;
   font-size: 0.85rem;
@@ -696,7 +741,7 @@ td {
 .sql-lab-results {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -726,6 +771,10 @@ td {
   .panel-header.horizontal {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .donut-chart-wrap {
+    grid-template-columns: 1fr;
   }
 
   .control-row {

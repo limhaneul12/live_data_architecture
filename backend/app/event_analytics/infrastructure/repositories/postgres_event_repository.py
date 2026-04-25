@@ -57,7 +57,7 @@ class EventRecord(EventAnalyticsBase):
 class PostgresEventRepository(EventRepository):
     """Persist validated web events with SQLAlchemy ORM batch inserts."""
 
-    def __init__(self, *, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         """Initialize this repository with a root-owned async session factory.
 
         Args:

@@ -6,7 +6,7 @@ from app.event_analytics.application.query_policy import (
 )
 
 
-def validate_sql(sql: str, *, row_limit: int = 100) -> tuple[str, frozenset[str], int]:
+def validate_sql(sql: str, row_limit: int = 100) -> tuple[str, frozenset[str], int]:
     result = AnalyticsSqlPolicy().validate(sql=sql, requested_row_limit=row_limit)
     return result.sql, result.referenced_relations, result.row_limit
 

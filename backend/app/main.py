@@ -7,6 +7,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
 from app.event_analytics.application.sql_query_service import SqlQueryService
 from app.event_analytics.infrastructure.database_url import to_sqlalchemy_async_url
@@ -78,11 +79,15 @@ def create_app(app_config: AppConfig) -> FastAPI:
         analytics_engine,
         expire_on_commit=False,
     )
+    analytics_query_repository = PostgresAnalyticsQueryRepository(
+        session_factory=analytics_session_factory,
+    )
     analytics_query_service = SqlQueryService(
         policy=AnalyticsSqlPolicy(),
-        repository=PostgresAnalyticsQueryRepository(
-            session_factory=analytics_session_factory,
-        ),
+        repository=analytics_query_repository,
+    )
+    explore_query_service = ExploreQueryService(
+        repository=analytics_query_repository,
     )
 
     async def refresh_dependency_health() -> None:
@@ -163,7 +168,11 @@ def create_app(app_config: AppConfig) -> FastAPI:
         lifecycle=lifecycle,
         refresh_dependency_health=refresh_dependency_health,
     )
-    install_analytics_routes(app, query_service=analytics_query_service)
+    install_analytics_routes(
+        app,
+        query_service=analytics_query_service,
+        explore_query_service=explore_query_service,
+    )
     return app
 
 

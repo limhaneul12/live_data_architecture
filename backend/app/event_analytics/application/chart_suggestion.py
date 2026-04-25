@@ -25,7 +25,7 @@ def suggest_chart(rows: AnalyticsRows) -> ChartSuggestion:
             series_axis=None,
         )
 
-    numeric_columns = _numeric_columns(rows=rows)
+    numeric_columns = _numeric_columns(rows)
     if len(rows.columns) == 1 or len(numeric_columns) == len(rows.columns):
         return ChartSuggestion(
             chart_kind="metric",
@@ -50,7 +50,7 @@ def suggest_chart(rows: AnalyticsRows) -> ChartSuggestion:
         x_axis=x_axis,
         y_axis=y_axis,
     )
-    chart_kind = "line" if _looks_temporal(column=x_axis) else "bar"
+    chart_kind = "line" if _looks_temporal(x_axis) else "bar"
     return ChartSuggestion(
         chart_kind=chart_kind,
         x_axis=x_axis,
@@ -59,7 +59,7 @@ def suggest_chart(rows: AnalyticsRows) -> ChartSuggestion:
     )
 
 
-def _numeric_columns(*, rows: AnalyticsRows) -> tuple[str, ...]:
+def _numeric_columns(rows: AnalyticsRows) -> tuple[str, ...]:
     """Find columns whose returned values are all numeric.
 
     Args:
@@ -130,7 +130,7 @@ def _series_axis(
     return None
 
 
-def _looks_temporal(*, column: str) -> bool:
+def _looks_temporal(column: str) -> bool:
     """Detect whether a column name likely represents time.
 
     Args:

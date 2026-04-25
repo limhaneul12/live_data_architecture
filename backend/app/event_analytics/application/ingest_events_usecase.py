@@ -20,7 +20,7 @@ class IngestEventsResult:
 class IngestEventsUseCase:
     """Store validated web events through the event repository port."""
 
-    def __init__(self, *, repository: EventRepository) -> None:
+    def __init__(self, repository: EventRepository) -> None:
         """Initialize this use case.
 
         Args:

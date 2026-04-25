@@ -173,7 +173,7 @@ class EventStreamIngestionLoop:
             inserted_count=inserted_count,
         )
 
-    async def run_forever(self, *, stop_event: asyncio.Event) -> None:
+    async def run_forever(self, stop_event: asyncio.Event) -> None:
         """Run polling iterations until the caller signals shutdown.
 
         Args:

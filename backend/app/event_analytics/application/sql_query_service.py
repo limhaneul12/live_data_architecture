@@ -31,7 +31,7 @@ class SqlQueryService:
         self._policy = policy
         self._repository = repository
 
-    async def execute(self, *, sql: str, row_limit: int) -> AnalyticsQueryResult:
+    async def execute(self, sql: str, row_limit: int) -> AnalyticsQueryResult:
         """Execute one manual or preset analytics SQL query.
 
         Args:

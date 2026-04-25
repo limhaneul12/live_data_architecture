@@ -39,7 +39,7 @@ class StreamMessage:
 class RedisStreamEventConsumer:
     """Read and acknowledge `web_event.v1` payloads from Redis Streams."""
 
-    def __init__(self, *, redis: AsyncRedisClient, stream_config: StreamConfig) -> None:
+    def __init__(self, redis: AsyncRedisClient, stream_config: StreamConfig) -> None:
         """Initialize this consumer with a root-owned Redis client.
 
         Args:

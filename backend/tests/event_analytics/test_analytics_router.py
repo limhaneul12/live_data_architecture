@@ -1,8 +1,10 @@
+from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import (
     MAX_QUERY_TEXT_LENGTH,
     AnalyticsSqlPolicy,
 )
 from app.event_analytics.application.sql_query_service import SqlQueryService
+from app.event_analytics.domain.explore_query import ExploreQuery
 from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.domain.repositories.analytics_query_repository import (
     AnalyticsQueryRepository,
@@ -18,12 +20,13 @@ from fastapi.testclient import TestClient
 
 
 class FakeAnalyticsQueryRepository(AnalyticsQueryRepository):
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False) -> None:
         self.fail = fail
         self.executed_sql: list[str] = []
         self.executed_row_limits: list[int] = []
+        self.executed_explore_queries: list[ExploreQuery] = []
 
-    async def execute_select(self, *, sql: str, row_limit: int) -> AnalyticsRows:
+    async def execute_select(self, sql: str, row_limit: int) -> AnalyticsRows:
         if self.fail:
             raise AnalyticsQueryExecutionError
         self.executed_sql.append(sql)
@@ -36,9 +39,20 @@ class FakeAnalyticsQueryRepository(AnalyticsQueryRepository):
             ),
         )
 
+    async def execute_explore_query(self, query: ExploreQuery) -> AnalyticsRows:
+        if self.fail:
+            raise AnalyticsQueryExecutionError
+        self.executed_explore_queries.append(query)
+        return AnalyticsRows(
+            columns=("event_type", "event_count"),
+            rows=(
+                {"event_type": "page_view", "event_count": 3},
+                {"event_type": "purchase", "event_count": 1},
+            ),
+        )
+
 
 def build_client(
-    *,
     repository: FakeAnalyticsQueryRepository | None = None,
 ) -> tuple[TestClient, FakeAnalyticsQueryRepository]:
     query_repository = repository or FakeAnalyticsQueryRepository()
@@ -49,6 +63,7 @@ def build_client(
             policy=AnalyticsSqlPolicy(),
             repository=query_repository,
         ),
+        explore_query_service=ExploreQueryService(repository=query_repository),
     )
     return TestClient(app), query_repository
 
@@ -115,6 +130,74 @@ def test_query_endpoint_returns_rows_and_chart_for_valid_select() -> None:
     }
 
 
+def test_explore_query_endpoint_executes_structured_dataset_query() -> None:
+    client, repository = build_client()
+
+    response = client.post(
+        "/analytics/explore-query",
+        json={
+            "dataset": "event_type_counts",
+            "columns": ["event_type", "event_count"],
+            "order_by": "event_count",
+            "order_direction": "desc",
+            "row_limit": 20,
+        },
+    )
+
+    assert response.status_code == 200
+    assert repository.executed_explore_queries == [
+        ExploreQuery(
+            dataset_name="event_type_counts",
+            column_names=("event_type", "event_count"),
+            order_by="event_count",
+            order_direction="desc",
+            row_limit=20,
+        )
+    ]
+    assert response.json()["chart"] == {
+        "chart_kind": "bar",
+        "x_axis": "event_type",
+        "y_axis": "event_count",
+        "series_axis": None,
+    }
+
+
+def test_explore_query_endpoint_caps_row_limit() -> None:
+    client, repository = build_client()
+
+    response = client.post(
+        "/analytics/explore-query",
+        json={
+            "dataset": "event_type_counts",
+            "columns": ["event_type", "event_count"],
+            "row_limit": 5_000,
+        },
+    )
+
+    assert response.status_code == 200
+    assert repository.executed_explore_queries[0].row_limit == 500
+
+
+def test_explore_query_endpoint_rejects_unknown_column() -> None:
+    client, _repository = build_client()
+
+    response = client.post(
+        "/analytics/explore-query",
+        json={
+            "dataset": "event_type_counts",
+            "columns": ["event_type", "pg_sleep"],
+            "row_limit": 20,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error_code": "explore_query_violation",
+        "message": "dataset에 없는 column은 조회할 수 없습니다.",
+        "rejected_reason": "unknown_column",
+    }
+
+
 def test_query_endpoint_returns_400_for_mutation_sql() -> None:
     client, _repository = build_client()
 
@@ -168,7 +251,7 @@ def test_query_endpoint_returns_422_for_oversized_sql_text() -> None:
 
 def test_query_endpoint_returns_503_when_database_execution_fails() -> None:
     client, _repository = build_client(
-        repository=FakeAnalyticsQueryRepository(fail=True),
+        repository=FakeAnalyticsQueryRepository(True),
     )
 
     response = client.post(

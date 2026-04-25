@@ -45,6 +45,7 @@ export function ChartPreview({
       {chart.chart_kind === "metric" ? <MetricPreview result={result} /> : null}
       {chart.chart_kind === "bar" ? <BarPreview result={previewResult} /> : null}
       {chart.chart_kind === "line" ? <LinePreview result={previewResult} /> : null}
+      {chart.chart_kind === "pie" ? <PiePreview result={previewResult} /> : null}
       {chart.chart_kind === "table" ? <p className="muted">이 결과는 표 형태가 더 적합합니다.</p> : null}
     </section>
   );
@@ -155,6 +156,64 @@ function LinePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
   );
 }
 
+function PiePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
+  const xAxis = result.chart.x_axis;
+  const yAxis = result.chart.y_axis;
+  if (xAxis === null || yAxis === null || result.rows.length === 0) {
+    return <p className="muted">donut chart에 필요한 label/metric 축을 찾지 못했습니다.</p>;
+  }
+
+  const slices = result.rows
+    .map((row, index) => {
+      const baseLabel = String(row[xAxis] ?? "-");
+      const seriesLabel = seriesValue(row, result.chart.series_axis);
+      return {
+        label: seriesLabel === null ? baseLabel : `${baseLabel} · ${seriesLabel}`,
+        value: Math.max(numericValue(row[yAxis]), 0),
+        color: COLORS[index % COLORS.length],
+      };
+    })
+    .filter((slice) => slice.value > 0);
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+  if (total <= 0) {
+    return <p className="muted">donut chart로 표시할 양수 metric이 없습니다.</p>;
+  }
+
+  let startAngle = -Math.PI / 2;
+  return (
+    <div className="donut-chart-wrap">
+      <svg className="donut-chart" viewBox="0 0 220 220" role="img" aria-label="Donut chart preview">
+        {slices.length === 1 ? (
+          <circle cx="110" cy="110" r="82" fill={slices[0].color} />
+        ) : (
+          slices.map((slice) => {
+            const endAngle = startAngle + (slice.value / total) * Math.PI * 2;
+            const path = donutSlicePath({ startAngle, endAngle });
+            startAngle = endAngle;
+            return <path key={slice.label} d={path} fill={slice.color} />;
+          })
+        )}
+        <circle cx="110" cy="110" r="46" fill="white" />
+        <text x="110" y="105" className="donut-total-label">
+          total
+        </text>
+        <text x="110" y="128" className="donut-total-value">
+          {formatValue(total)}
+        </text>
+      </svg>
+      <div className="donut-legend">
+        {slices.map((slice) => (
+          <span key={slice.label} className="legend-item">
+            <i style={{ background: slice.color }} />
+            {slice.label}
+            <strong>{Math.round((slice.value / total) * 100)}%</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function groupRowsBySeries(rows: QueryRow[], seriesAxis: string | null): Array<{ name: string; rows: QueryRow[] }> {
   if (seriesAxis === null) {
     return [{ name: "result", rows }];
@@ -211,6 +270,41 @@ function seriesValue(row: QueryRow, seriesAxis: string | null): string | null {
     return null;
   }
   return String(row[seriesAxis] ?? "unknown");
+}
+
+function donutSlicePath({
+  startAngle,
+  endAngle,
+}: {
+  startAngle: number;
+  endAngle: number;
+}): string {
+  const center = 110;
+  const outerRadius = 82;
+  const innerRadius = 46;
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  const startOuter = polarPoint(center, outerRadius, startAngle);
+  const endOuter = polarPoint(center, outerRadius, endAngle);
+  const startInner = polarPoint(center, innerRadius, startAngle);
+  const endInner = polarPoint(center, innerRadius, endAngle);
+  return [
+    `M ${startOuter.x} ${startOuter.y}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${endOuter.x} ${endOuter.y}`,
+    `L ${endInner.x} ${endInner.y}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${startInner.x} ${startInner.y}`,
+    "Z",
+  ].join(" ");
+}
+
+function polarPoint(
+  center: number,
+  radius: number,
+  angle: number,
+): { x: number; y: number } {
+  return {
+    x: center + Math.cos(angle) * radius,
+    y: center + Math.sin(angle) * radius,
+  };
 }
 
 function numericValue(value: QueryRow[string]): number {

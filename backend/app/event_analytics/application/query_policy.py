@@ -61,7 +61,7 @@ class ValidatedSqlQuery:
 class SqlPolicyViolationError(Exception):
     """Raised when manual SQL violates the analytics safety policy."""
 
-    def __init__(self, *, reason: SqlPolicyRejectionReason, message: str) -> None:
+    def __init__(self, reason: SqlPolicyRejectionReason, message: str) -> None:
         """Initialize a SQL policy violation.
 
         Args:
@@ -97,7 +97,7 @@ class AnalyticsSqlPolicy:
         self._allowed_relations = allowed_relations
         self._max_row_limit = max_row_limit
 
-    def validate(self, *, sql: str, requested_row_limit: int) -> ValidatedSqlQuery:
+    def validate(self, sql: str, requested_row_limit: int) -> ValidatedSqlQuery:
         """Validate SQL and return its normalized execution contract.
 
         Args:
