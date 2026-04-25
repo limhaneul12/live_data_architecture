@@ -19,8 +19,9 @@ python -m event_generator
 ```
 
 데모나 테스트에서는 `--max-events`와 `--no-sleep`을 사용합니다. `--seed`를
-명시하면 같은 이벤트 순서를 재현하고, 생략하면 producer 재시작 시 같은
-`event_id`를 replay하지 않도록 실행마다 seed를 자동 생성합니다.
+명시하면 같은 기준 날짜/`--start-time` 안에서 같은 이벤트 순서를 재현하고,
+생략하면 producer 재시작 시 같은 `event_id`를 replay하지 않도록 실행마다
+seed를 자동 생성합니다.
 
 ```bash
 python -m event_generator --max-events 10 --seed 20260424 --no-sleep
@@ -51,7 +52,7 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 | `--seed` | 자동 생성 | 재현 가능한 이벤트/phase 생성이 필요할 때 명시하는 seed |
 | `--max-events` | 없음 | 지정하지 않으면 infinite mode |
 | `--producer-id` | `producer_local` | 이벤트에 기록되는 producer 식별자 |
-| `--start-time` | `2026-04-24T00:00:00Z` | 이벤트 timestamp의 기준 날짜. 월/일은 고정하고 시간대만 랜덤 분포로 생성 |
+| `--start-time` | 현재 UTC 기준 전날 00:00 | 이벤트 timestamp의 시작 경계. 과거/현재만 허용하고 미래 시각은 거부 |
 | `--slow-rate` | `1` | slow phase events/sec |
 | `--normal-rate` | `5` | normal phase events/sec |
 | `--burst-rate` | `20` | burst phase events/sec |
@@ -76,7 +77,11 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 
 ## 발생 시각 설계
 
-`occurred_at`은 `--start-time`의 월/일을 기준 날짜로 사용하되, 시/분/초/밀리초는 이벤트마다 랜덤하게 생성합니다. 과제의 핵심 분석은 일자별 장기 추세가 아니라 “시간대별 이벤트 추이”이므로 월/일까지 랜덤하게 넓히지 않고 하루 안의 hour-of-day 분포만 표현합니다.
+`occurred_at`은 하드코딩된 날짜를 사용하지 않습니다. 기본값은 실행 시점의 현재 UTC 날짜 기준 전날 00:00이며, `--start-time`으로 과거 또는 현재 시각을 지정할 수 있습니다. 현재 시각보다 미래인 `--start-time`은 거부합니다.
+
+기본값을 “전날”로 둔 이유는 하루 전체 0~23시 분포를 만들면서도 미래 timestamp를 생성하지 않기 위해서입니다. 사용자가 오늘 날짜의 `--start-time`을 지정하면 생성되는 `occurred_at`은 현재 시각을 넘지 않도록 제한합니다.
+
+날짜 범위는 작게 유지하고, 시간대(hour-of-day)만 이벤트마다 랜덤하게 생성합니다. 과제의 핵심 분석은 일자별 장기 추세가 아니라 “시간대별 이벤트 추이”이므로 기본 demo에서는 하루 안의 hour-of-day 분포를 표현합니다.
 
 시간대 분포는 `traffic_phase`와 연결합니다.
 
@@ -84,7 +89,7 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 - `normal`: 오전~오후 업무/탐색 시간대에 넓게 분포
 - `burst`: 점심/퇴근 후/저녁 피크 시간대 비중을 높임
 
-이 방식은 실제 emit 순서와 event time이 반드시 오름차순이라는 뜻은 아닙니다. Stream은 producer가 발생시킨 순서대로 흘러가지만, analytics 관점의 `occurred_at`은 하루 안의 시간대 분포를 더 잘 보여주도록 샘플링됩니다.
+이 방식은 실제 emit 순서와 event time이 반드시 오름차순이라는 뜻은 아닙니다. Stream은 producer가 발생시킨 순서대로 흘러가지만, analytics 관점의 `occurred_at`은 현재 시각을 넘지 않는 범위에서 시간대 분포를 더 잘 보여주도록 샘플링됩니다.
 
 ## 필드 구조
 

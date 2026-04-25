@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import FrameType
 
-from event_generator.generator import EventGenerator, EventGeneratorConfig
+from event_generator.generator import (
+    EventGenerator,
+    EventGeneratorConfig,
+    default_start_time,
+)
 from event_generator.models import EventType
 from event_generator.serialization import event_to_json_line
 from event_generator.sinks import RedisStreamEventSink, StdoutEventSink
@@ -47,9 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--max-events", type=positive_int, default=None)
     parser.add_argument("--producer-id", default="producer_local")
-    parser.add_argument(
-        "--start-time", type=parse_utc_datetime, default="2026-04-24T00:00:00Z"
-    )
+    parser.add_argument("--start-time", type=parse_utc_datetime, default=None)
     parser.add_argument("--slow-rate", type=positive_int, default=1)
     parser.add_argument("--normal-rate", type=positive_int, default=5)
     parser.add_argument("--burst-rate", type=positive_int, default=20)
@@ -135,20 +137,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             min_phase_seconds=args.min_phase_seconds,
             max_phase_seconds=args.max_phase_seconds,
         )
+        start_time = (
+            args.start_time if args.start_time is not None else default_start_time()
+        )
+        generator = EventGenerator(
+            config=EventGeneratorConfig(
+                seed=seed,
+                producer_id=args.producer_id,
+                start_time=start_time,
+            ),
+            traffic_profile=TrafficProfile(seed=seed + 1, config=traffic_config),
+        )
     except ValueError as exc:
         parser.error(str(exc))
 
     shutdown_flag = ShutdownFlag()
     install_signal_handlers(shutdown_flag=shutdown_flag)
 
-    generator = EventGenerator(
-        config=EventGeneratorConfig(
-            seed=seed,
-            producer_id=args.producer_id,
-            start_time=args.start_time,
-        ),
-        traffic_profile=TrafficProfile(seed=seed + 1, config=traffic_config),
-    )
     sink = build_event_sink(args)
 
     event_counts: Counter[str] = Counter()

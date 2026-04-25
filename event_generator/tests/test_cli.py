@@ -34,7 +34,15 @@ def test_cli_emits_exact_max_events_to_stdout() -> None:
 
 
 def test_cli_is_reproducible_with_same_seed() -> None:
-    args = ("--max-events", "20", "--seed", "20260424", "--no-sleep")
+    args = (
+        "--max-events",
+        "20",
+        "--seed",
+        "20260424",
+        "--start-time",
+        "2000-01-01T00:00:00Z",
+        "--no-sleep",
+    )
 
     first = run_generator(*args)
     second = run_generator(*args)
@@ -70,14 +78,29 @@ def test_cli_applies_custom_start_time_date_to_first_event() -> None:
         "--seed",
         "20260424",
         "--start-time",
-        "2026-05-01T12:30:00Z",
+        "2000-05-01T12:30:00Z",
         "--no-sleep",
     )
 
     payload = json.loads(result.stdout)
 
     assert result.returncode == 0
-    assert str(payload["occurred_at"]).startswith("2026-05-01T")
+    assert str(payload["occurred_at"]).startswith("2000-05-01T")
+
+
+def test_cli_rejects_future_start_time() -> None:
+    result = run_generator(
+        "--max-events",
+        "1",
+        "--seed",
+        "20260424",
+        "--start-time",
+        "2999-01-01T00:00:00Z",
+        "--no-sleep",
+    )
+
+    assert result.returncode != 0
+    assert "start time must not be in the future" in result.stderr
 
 
 def test_cli_exits_cleanly_when_sigterm_requests_shutdown() -> None:

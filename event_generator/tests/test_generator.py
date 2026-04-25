@@ -2,6 +2,7 @@ import re
 from collections import Counter
 from datetime import UTC, datetime
 
+import pytest
 from event_generator.generator import EventGenerator, EventGeneratorConfig
 from event_generator.models import EventType
 from event_generator.traffic_profile import (
@@ -12,12 +13,14 @@ from event_generator.traffic_profile import (
 
 
 def build_generator(seed: int = 20260424) -> EventGenerator:
+    reference_time = datetime(2026, 4, 25, tzinfo=UTC)
     traffic_config = TrafficProfileConfig(rates=PhaseRates())
     return EventGenerator(
         config=EventGeneratorConfig(
             seed=seed,
             producer_id="producer_test",
             start_time=datetime(2026, 4, 24, tzinfo=UTC),
+            reference_time=reference_time,
         ),
         traffic_profile=TrafficProfile(seed=seed + 1, config=traffic_config),
     )
@@ -80,6 +83,40 @@ def test_occurred_at_hour_distribution_favors_active_hours() -> None:
     active_hour_count = sum(counts[hour] for hour in range(10, 22))
 
     assert active_hour_count > overnight_count
+
+
+def test_occurred_at_never_exceeds_reference_time_for_today() -> None:
+    start_time = datetime(2026, 4, 24, 8, 15, 30, 456_000, tzinfo=UTC)
+    reference_time = datetime(2026, 4, 24, 10, 30, 15, 123_000, tzinfo=UTC)
+    traffic_config = TrafficProfileConfig(rates=PhaseRates())
+    generator = EventGenerator(
+        config=EventGeneratorConfig(
+            seed=20260424,
+            producer_id="producer_test",
+            start_time=start_time,
+            reference_time=reference_time,
+        ),
+        traffic_profile=TrafficProfile(seed=20260425, config=traffic_config),
+    )
+    events = list(generator.iter_events(max_events=1_000))
+
+    assert all(event.occurred_at <= reference_time for event in events)
+    assert all(event.occurred_at >= start_time for event in events)
+    assert {event.occurred_at.date() for event in events} == {reference_time.date()}
+
+
+def test_generator_rejects_future_start_time() -> None:
+    traffic_config = TrafficProfileConfig(rates=PhaseRates())
+    with pytest.raises(ValueError, match="future"):
+        EventGenerator(
+            config=EventGeneratorConfig(
+                seed=20260424,
+                producer_id="producer_test",
+                start_time=datetime(2026, 4, 26, tzinfo=UTC),
+                reference_time=datetime(2026, 4, 25, tzinfo=UTC),
+            ),
+            traffic_profile=TrafficProfile(seed=20260425, config=traffic_config),
+        )
 
 
 def test_large_sample_contains_all_required_event_types() -> None:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import random
 from collections.abc import Iterator
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from event_generator.models import EventType, GeneratedEvent, TrafficPhase
 from event_generator.traffic_profile import TrafficProfile
@@ -18,6 +18,7 @@ _EVENT_TYPES: tuple[EventType, ...] = (
     EventType.CHECKOUT_ERROR,
 )
 _EVENT_WEIGHTS: tuple[int, ...] = (45, 25, 15, 8, 7)
+_FUTURE_START_TIME_ERROR = "start time must not be in the future"
 _DAY_HOURS = tuple(range(24))
 _HOUR_WEIGHTS_BY_PHASE: dict[TrafficPhase, tuple[int, ...]] = {
     TrafficPhase.SLOW: (
@@ -152,13 +153,27 @@ _EVENT_ID_COUNTER_MULTIPLIER = 0x9E3779B97F4A7C15
 _EVENT_ID_COUNTER_MASK = (1 << 64) - 1
 
 
+def default_start_time() -> datetime:
+    """Return the default event date lower bound.
+
+    Args:
+        None.
+
+    Returns:
+        UTC midnight for the previous day.
+    """
+    yesterday = datetime.now(UTC).date() - timedelta(days=1)
+    return datetime(yesterday.year, yesterday.month, yesterday.day, tzinfo=UTC)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EventGeneratorConfig:
     """Configuration for deterministic event generation."""
 
     seed: int = 20260424
     producer_id: str = "producer_local"
-    start_time: datetime = datetime(2026, 4, 24, tzinfo=UTC)
+    start_time: datetime = field(default_factory=default_start_time)
+    reference_time: datetime | None = None
 
 
 class EventGenerator:
@@ -176,10 +191,19 @@ class EventGenerator:
             config: Deterministic generator configuration.
             traffic_profile: Seeded traffic phase profile.
         """
+        reference_time = _normalized_reference_time(config.reference_time)
+        start_time = config.start_time.astimezone(UTC)
+        _ensure_start_time_is_not_future(
+            start_time=start_time,
+            reference_time=reference_time,
+        )
+
         self._rng = random.Random(config.seed)  # noqa: S311
         self._config = config
         self._traffic_profile = traffic_profile
-        self._event_date = config.start_time.astimezone(UTC).date()
+        self._start_time = start_time
+        self._event_date = start_time.date()
+        self._reference_time = reference_time
         self._event_id_prefix = self._rng.getrandbits(32)
         self._event_sequence = 0
 
@@ -232,18 +256,98 @@ class EventGenerator:
         return f"evt_{self._event_id_prefix:08x}{permuted_counter:016x}"
 
     def _choose_occurred_at(self, phase: TrafficPhase) -> datetime:
-        weights = _HOUR_WEIGHTS_BY_PHASE[phase]
-        hour = self._rng.choices(_DAY_HOURS, weights=weights, k=1)[0]
+        """Choose one analytics event timestamp for the configured date.
+
+        Args:
+            phase: Traffic phase used to select an hour-of-day distribution.
+
+        Returns:
+            UTC timestamp that never exceeds the configured reference time.
+        """
+        hours, weights = self._hour_distribution_for_phase(phase)
+        hour = self._rng.choices(hours, weights=weights, k=1)[0]
+        lower_bound, upper_bound = self._millisecond_bounds(hour=hour)
+        millisecond_of_hour = self._rng.randrange(lower_bound, upper_bound + 1)
+        minute, remainder = divmod(millisecond_of_hour, 60_000)
+        second, millisecond = divmod(remainder, 1_000)
         return datetime(
             self._event_date.year,
             self._event_date.month,
             self._event_date.day,
             hour,
-            self._rng.randrange(60),
-            self._rng.randrange(60),
-            self._rng.randrange(1_000) * 1_000,
+            minute,
+            second,
+            millisecond * 1_000,
             tzinfo=UTC,
         )
+
+    def _hour_distribution_for_phase(
+        self,
+        phase: TrafficPhase,
+    ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Return valid hour choices and weights for one traffic phase.
+
+        Args:
+            phase: Traffic phase used to choose the base hour weights.
+
+        Returns:
+            Pair of hour choices and matching weights.
+        """
+        weights = _HOUR_WEIGHTS_BY_PHASE[phase]
+        allowed_hours = tuple(
+            hour for hour in _DAY_HOURS if self._is_allowed_hour(hour)
+        )
+        allowed_weights = tuple(weights[hour] for hour in allowed_hours)
+        return allowed_hours, allowed_weights
+
+    def _is_allowed_hour(self, hour: int) -> bool:
+        """Return whether an hour can produce an in-window event timestamp.
+
+        Args:
+            hour: Candidate event hour in the configured event date.
+
+        Returns:
+            True when the hour is inside the start/reference boundary.
+        """
+        is_before_start = (
+            self._event_date == self._start_time.date() and hour < self._start_time.hour
+        )
+        is_after_reference = (
+            self._event_date == self._reference_time.date()
+            and hour > self._reference_time.hour
+        )
+        return not (is_before_start or is_after_reference)
+
+    def _millisecond_bounds(self, *, hour: int) -> tuple[int, int]:
+        """Return allowed millisecond offsets for an event hour.
+
+        Args:
+            hour: Selected event hour in the configured event date.
+
+        Returns:
+            Inclusive lower and upper millisecond-of-hour bounds.
+        """
+        lower_bound = 0
+        upper_bound = 3_599_999
+        if (
+            self._event_date == self._start_time.date()
+            and hour == self._start_time.hour
+        ):
+            lower_bound = (
+                self._start_time.minute * 60_000
+                + self._start_time.second * 1_000
+                + self._start_time.microsecond // 1_000
+            )
+        if (
+            self._event_date == self._reference_time.date()
+            and hour == self._reference_time.hour
+        ):
+            upper_bound = (
+                self._reference_time.minute * 60_000
+                + self._reference_time.second * 1_000
+                + self._reference_time.microsecond // 1_000
+            )
+        return lower_bound, upper_bound
 
     def _build_event(
         self, *, event_type: EventType, phase: TrafficPhase
@@ -356,3 +460,35 @@ class EventGenerator:
         discount_cents = self._rng.randint(0, product.price_cents // 5)
         cents = product.price_cents - discount_cents
         return round(cents / 100, 2)
+
+
+def _normalized_reference_time(reference_time: datetime | None) -> datetime:
+    """Normalize the optional reference time to UTC.
+
+    Args:
+        reference_time: Optional externally supplied current-time boundary.
+
+    Returns:
+        Timezone-aware UTC reference time.
+    """
+    if reference_time is None:
+        return datetime.now(UTC)
+    return reference_time.astimezone(UTC)
+
+
+def _ensure_start_time_is_not_future(
+    *,
+    start_time: datetime,
+    reference_time: datetime,
+) -> None:
+    """Reject an event date lower bound that is after the reference time.
+
+    Args:
+        start_time: Requested event timestamp lower bound.
+        reference_time: Current-time boundary used for validation.
+
+    Returns:
+        None.
+    """
+    if start_time > reference_time:
+        raise ValueError(_FUTURE_START_TIME_ERROR)
