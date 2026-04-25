@@ -1,18 +1,14 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  type AnalyticsConnection,
-  type AnalyticsConnectionTestResult,
   type ChartKind,
   type Dataset,
   type ExploreOrderDirection,
   type QueryResult,
-  fetchAnalyticsConnection,
   fetchDatasets,
   runAnalyticsQuery,
   runExploreQuery,
-  testAnalyticsConnection,
 } from "../lib/api";
 import { ChartPreview } from "./chart-preview";
 import { ResultTable } from "./result-table";
@@ -28,12 +24,11 @@ const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string }> = [
   { value: "table", label: "Table" },
 ];
 
-type WorkspaceMode = "explore" | "sql-lab" | "connections";
+type WorkspaceMode = "explore" | "sql-lab";
 type QueryStatus = "idle" | "loading" | "success" | "error";
 
 export function AnalyticsWorkspace() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [connection, setConnection] = useState<AnalyticsConnection | null>(null);
   const [mode, setMode] = useState<WorkspaceMode>("explore");
   const [selectedDatasetName, setSelectedDatasetName] = useState("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -53,14 +48,10 @@ export function AnalyticsWorkspace() {
     async function loadInitialData() {
       setBootLoading(true);
       try {
-        const [loadedConnection, loadedDatasets] = await Promise.all([
-          fetchAnalyticsConnection(),
-          fetchDatasets(),
-        ]);
+        const loadedDatasets = await fetchDatasets();
         if (!mounted) {
           return;
         }
-        setConnection(loadedConnection);
         setDatasets(loadedDatasets);
         const defaultDataset = preferredDataset(loadedDatasets);
         if (defaultDataset !== undefined) {
@@ -199,43 +190,23 @@ export function AnalyticsWorkspace() {
           >
             SQL Lab
           </button>
-          <button
-            className={topNavClass(mode, "connections")}
-            type="button"
-            onClick={() => setMode("connections")}
-          >
-            Connections
-          </button>
         </nav>
-        <button
-          className={`connection-pill ${metadataLoaded ? "ok" : "error"}`}
-          type="button"
-          onClick={() => setMode("connections")}
-        >
+        <div className={`status-pill ${metadataLoaded ? "ok" : "error"}`}>
           <span />
           {statusLabel}
-        </button>
+        </div>
       </header>
 
       <div className="superset-layout">
         <section className="superset-main">
           <div className="page-toolbar">
             <div>
-              <p className="breadcrumb">{workspaceBreadcrumb(mode)}</p>
+              <p className="breadcrumb">{workspaceBreadcrumb()}</p>
               <h2>{workspaceTitle(mode)}</h2>
             </div>
           </div>
 
-          {mode === "connections" ? (
-            <ConnectionsWorkspace
-              connection={connection}
-              datasets={datasets}
-              onOpenDataset={(dataset) => {
-                setSqlLabSql(exampleSqlForDataset(dataset));
-                setMode("sql-lab");
-              }}
-            />
-          ) : mode === "explore" ? (
+          {mode === "explore" ? (
             <section className="explore-grid">
               <aside className="control-panel">
                 <div className="control-header">
@@ -488,263 +459,19 @@ export function AnalyticsWorkspace() {
   );
 }
 
-function ConnectionsWorkspace({
-  connection,
-  datasets,
-  onOpenDataset,
-}: {
-  connection: AnalyticsConnection | null;
-  datasets: Dataset[];
-  onOpenDataset: (dataset: Dataset) => void;
-}) {
-  const databaseName = databaseDisplayName(connection?.database ?? "postgresql");
-  const connectedTableCount = datasets.length;
-  const [connectionAddress, setConnectionAddress] = useState("");
-  const [connectionTestStatus, setConnectionTestStatus] =
-    useState<QueryStatus>("idle");
-  const [connectionTestResult, setConnectionTestResult] =
-    useState<AnalyticsConnectionTestResult | null>(null);
-  const [connectionTestError, setConnectionTestError] = useState<string | null>(null);
-
-  async function handleConnectionSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedAddress = connectionAddress.trim();
-    if (trimmedAddress.length === 0) {
-      setConnectionTestResult(null);
-      setConnectionTestError("DB address를 입력해주세요.");
-      setConnectionTestStatus("error");
-      return;
-    }
-
-    setConnectionTestStatus("loading");
-    setConnectionTestError(null);
-    try {
-      const result = await testAnalyticsConnection(trimmedAddress);
-      setConnectionTestResult(result);
-      setConnectionTestStatus(result.reachable ? "success" : "error");
-    } catch (error) {
-      setConnectionTestResult(null);
-      setConnectionTestError(
-        error instanceof Error ? error.message : "DB 연결 확인에 실패했습니다.",
-      );
-      setConnectionTestStatus("error");
-    }
-  }
-
-  return (
-    <section className="connections-grid">
-      <section className="connection-overview-panel">
-        <div className="panel-header horizontal">
-          <div>
-            <p className="breadcrumb">Connections</p>
-            <h2>Connected database</h2>
-            <p>
-              현재 연결된 analytics DB와 조회 가능한 generated table 목록을 확인합니다.
-            </p>
-          </div>
-        </div>
-
-        <div className="database-choice-grid" aria-label="Supported databases">
-          <article className="database-choice-card active">
-            <div className="database-icon" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <strong>{databaseName}</strong>
-            <small>{connectionStatusText(connection)}</small>
-          </article>
-        </div>
-
-        <DatabaseConnectionPanel connection={connection} />
-
-        <form className="connection-wizard-card" onSubmit={handleConnectionSubmit}>
-          <div className="database-connection-title">
-            <span>Connect database</span>
-            <strong>PostgreSQL only</strong>
-          </div>
-          <p>
-            DB 주소를 입력하면 backend가 연결 가능 여부만 확인합니다. Password는
-            결과 화면에서 masking됩니다.
-          </p>
-
-          <label className="control-label compact" htmlFor="connection-address-input">
-            DB address
-          </label>
-          <input
-            id="connection-address-input"
-            className="superset-input writable"
-            value={connectionAddress}
-            onChange={(event) => setConnectionAddress(event.target.value)}
-            placeholder="postgresql://user:password@localhost:15432/live_data"
-            spellCheck={false}
-          />
-
-          <button
-            className="primary-button"
-            type="submit"
-            disabled={
-              connectionAddress.trim().length === 0 ||
-              connectionTestStatus === "loading"
-            }
-          >
-            {connectionTestStatus === "loading" ? "Connecting..." : "Connect"}
-          </button>
-
-          {connectionTestResult !== null ? (
-            <div
-              className={
-                connectionTestResult.reachable
-                  ? "connection-test-result success"
-                  : "connection-test-result error"
-              }
-            >
-              <strong>
-                {connectionTestResult.reachable ? "Connected" : "Connection failed"}
-              </strong>
-              <span>{connectionTestResult.message}</span>
-              <code>{connectionTestResult.address}</code>
-            </div>
-          ) : null}
-
-          {connectionTestError !== null ? (
-            <div className="connection-test-result error">
-              <strong>Connection failed</strong>
-              <span>{connectionTestError}</span>
-            </div>
-          ) : null}
-        </form>
-      </section>
-
-      <section className="connected-tables-panel">
-        <div className="panel-header horizontal">
-          <div>
-            <p className="breadcrumb">Generated tables</p>
-            <h2>{connectedTableCount} connected tables</h2>
-            <p>
-              SQL Lab에서 직접 조회 가능한 generated table 목록입니다. raw events
-              table은 보안상 노출하지 않습니다.
-            </p>
-          </div>
-        </div>
-
-        <div className="connection-table-list">
-          {datasets.map((dataset) => (
-            <article key={dataset.name} className="connection-table-card">
-              <div>
-                <strong>{dataset.name}</strong>
-                <p>{dataset.description}</p>
-                <div className="metadata-columns">
-                  {dataset.columns.map((column) => (
-                    <span key={column.name}>
-                      {column.name}
-                      <small>{column.kind}</small>
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <button
-                className="metadata-query-button"
-                type="button"
-                onClick={() => onOpenDataset(dataset)}
-              >
-                Open in SQL Lab
-              </button>
-            </article>
-          ))}
-        </div>
-      </section>
-    </section>
-  );
-}
-
-function DatabaseConnectionPanel({
-  connection,
-}: {
-  connection: AnalyticsConnection | null;
-}) {
-  const databaseValue = connection?.database ?? "postgresql";
-  const addressValue =
-    connection?.address ?? "analytics database metadata is loading";
-  const sourceLabel =
-    connection?.source === "analytics_read_only_dsn"
-      ? "Read-only analytics DSN"
-      : "Writer DSN fallback";
-
-  return (
-    <section className="database-connection-card" aria-label="Database connection">
-      <div className="database-connection-title">
-        <span>Database</span>
-        <strong>{sourceLabel}</strong>
-      </div>
-
-      <label className="control-label compact" htmlFor="database-kind">
-        DB type
-      </label>
-      <select
-        id="database-kind"
-        className="superset-select"
-        value={databaseValue}
-        disabled
-      >
-        {(connection?.supported_databases ?? ["postgresql"]).map((database) => (
-          <option key={database} value={database}>
-            PostgreSQL
-          </option>
-        ))}
-      </select>
-
-      <label className="control-label compact" htmlFor="database-address">
-        Address
-      </label>
-      <input
-        id="database-address"
-        className="superset-input"
-        value={addressValue}
-        readOnly
-      />
-
-      <p>{connection?.message ?? "analytics DB 연결 정보를 불러오는 중입니다."}</p>
-    </section>
-  );
-}
-
 function topNavClass(currentMode: WorkspaceMode, targetMode: WorkspaceMode): string {
   return currentMode === targetMode ? "top-nav-link active" : "top-nav-link";
 }
 
-function workspaceBreadcrumb(mode: WorkspaceMode): string {
-  if (mode === "connections") {
-    return "Data";
-  }
+function workspaceBreadcrumb(): string {
   return "Event analytics";
 }
 
 function workspaceTitle(mode: WorkspaceMode): string {
-  if (mode === "connections") {
-    return "Connections";
-  }
   if (mode === "explore") {
     return "Chart builder";
   }
   return "SQL Lab";
-}
-
-function databaseDisplayName(database: AnalyticsConnection["database"]): string {
-  if (database === "postgresql") {
-    return "PostgreSQL";
-  }
-  return database;
-}
-
-function connectionStatusText(connection: AnalyticsConnection | null): string {
-  if (connection === null) {
-    return "Loading metadata";
-  }
-  if (connection.source === "analytics_read_only_dsn") {
-    return "Connected with read-only DSN";
-  }
-  return "Connected with writer fallback";
 }
 
 function preferredDataset(datasets: Dataset[]): Dataset | undefined {

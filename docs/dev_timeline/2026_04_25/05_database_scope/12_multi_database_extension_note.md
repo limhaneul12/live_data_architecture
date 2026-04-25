@@ -39,7 +39,7 @@ Chart Builder는 structured request 기반이라 repository adapter로 확장하
 
 ## 5. 검증 결과
 
-- `rg -n "database_support_extension|다른 DB 지원 가능성|multi DB|PostgreSQL 외" README.md docs/event_generator/step2_backend_analytics_design.md docs/remaining_work.md docs/dev_timeline/2026_04_25/12_multi_database_extension_note.md` → README/설계/remaining work 링크와 문구 확인
+- `rg -n "database_support_extension|다른 DB 지원 가능성|multi DB|PostgreSQL 외" README.md docs/event_generator/step2_backend_analytics_design.md docs/remaining_work.md docs/dev_timeline/2026_04_25/05_database_scope/12_multi_database_extension_note.md` → README/설계/remaining work 링크와 문구 확인
 - `git diff --check` → 통과
 - `make ci` → backend/event_generator format check, lint, pyrefly, guardrails, pytest 152개 통과
 - `docker compose config -q` → 통과

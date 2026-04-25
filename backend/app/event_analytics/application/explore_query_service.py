@@ -10,26 +10,13 @@ from app.event_analytics.domain.query_result import AnalyticsQueryResult
 from app.event_analytics.domain.repositories.analytics_query_repository import (
     AnalyticsQueryRepository,
 )
+from app.shared.exceptions import (
+    EventAnalyticsDatabaseExecutionError,
+    EventAnalyticsExploreExecutionUnavailableError,
+    EventAnalyticsExploreQueryValidationError as ExploreQueryValidationError,
+)
 
 MAX_EXPLORE_QUERY_ROW_LIMIT = 500
-
-
-class ExploreQueryValidationError(Exception):
-    """Raised when a structured Explore request is outside the dataset catalog."""
-
-    def __init__(self, reason: str, message: str) -> None:
-        """Initialize a structured query validation error.
-
-        Args:
-            reason: Stable machine-readable rejection reason.
-            message: Human-readable rejection detail.
-
-        Returns:
-            None.
-        """
-        super().__init__(message)
-        self.reason = reason
-        self.message = message
 
 
 class ExploreQueryService:
@@ -73,7 +60,10 @@ class ExploreQueryService:
             order_direction=order_direction,
             row_limit=row_limit,
         )
-        rows = await self._repository.execute_explore_query(query)
+        try:
+            rows = await self._repository.execute_explore_query(query)
+        except EventAnalyticsDatabaseExecutionError as exc:
+            raise EventAnalyticsExploreExecutionUnavailableError from exc
         return AnalyticsQueryResult(
             columns=rows.columns,
             rows=rows.rows,

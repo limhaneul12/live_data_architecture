@@ -60,7 +60,7 @@ POST /analytics/query
 
 ```text
 backend/app/event_analytics/interface/router/analytics_router.py
-backend/app/event_analytics/interface/analytics_schemas.py
+backend/app/event_analytics/interface/schemas/analytics.py
 backend/app/event_analytics/application/sql_query_service.py
 backend/app/event_analytics/infrastructure/repositories/postgres_analytics_query_repository.py
 ```

@@ -3,6 +3,10 @@
 작성일: 2026-04-25  
 브랜치: `fect/structured-explore-query`
 
+> 상태: 이후 `19_remove_connections_feature.md`에서 Connections 화면과
+> connection-test API는 과제 범위 축소를 위해 삭제했다. 이 문서는 당시
+> 검토/구현 이력으로만 남긴다.
+
 ## 배경
 
 사용자는 database connection UI가 Chart Builder control panel 안에 섞여 있는 것보다,

@@ -8,6 +8,9 @@ from typing import Final, Literal
 import sqlglot
 from app.event_analytics.application.analytics_catalog import ALLOWED_DATASET_NAMES
 from app.event_analytics.constants import MAX_ANALYTICS_SQL_TEXT_LENGTH
+from app.shared.exceptions import (
+    EventAnalyticsSqlPolicyViolationError as SqlPolicyViolationError,
+)
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
@@ -64,24 +67,6 @@ class ValidatedSqlQuery:
     sql: str
     referenced_relations: frozenset[str]
     row_limit: int
-
-
-class SqlPolicyViolationError(Exception):
-    """Raised when manual SQL violates the analytics safety policy."""
-
-    def __init__(self, reason: SqlPolicyRejectionReason, message: str) -> None:
-        """Initialize a SQL policy violation.
-
-        Args:
-            reason: Stable machine-readable rejection reason.
-            message: Human-readable rejection detail.
-
-        Returns:
-            None.
-        """
-        super().__init__(message)
-        self.reason = reason
-        self.message = message
 
 
 class AnalyticsSqlPolicy:

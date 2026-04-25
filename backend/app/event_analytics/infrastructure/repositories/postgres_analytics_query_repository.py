@@ -11,6 +11,9 @@ from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.domain.repositories.analytics_query_repository import (
     AnalyticsQueryRepository,
 )
+from app.shared.exceptions import (
+    EventAnalyticsDatabaseExecutionError as AnalyticsQueryExecutionError,
+)
 from app.shared.types import JSONObject, JSONValue
 from sqlalchemy import column, select, table, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,10 +29,6 @@ ANALYTICS_STATEMENT_TIMEOUT_MS: Final = 3_000
 ANALYTICS_LOCK_TIMEOUT_MS: Final = 500
 ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT_MS: Final = 5_000
 ANALYTICS_SEARCH_PATH_SQL: Final = "public, pg_catalog"
-
-
-class AnalyticsQueryExecutionError(Exception):
-    """Raised when PostgreSQL cannot execute a validated analytics query."""
 
 
 class PostgresAnalyticsQueryRepository(AnalyticsQueryRepository):

@@ -4,33 +4,24 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from app.event_analytics.constants import (
-    MAX_ANALYTICS_CONNECTION_ADDRESS_LENGTH,
-    MAX_ANALYTICS_SQL_TEXT_LENGTH,
-)
+from app.event_analytics.constants import MAX_ANALYTICS_SQL_TEXT_LENGTH
 from app.event_analytics.domain.analytics_catalog import (
     AnalyticsDataset,
     AnalyticsDatasetColumn,
     ColumnKind,
     PresetQuery,
 )
-from app.event_analytics.domain.analytics_connection import (
-    AnalyticsConnectionInfo,
-    AnalyticsConnectionSource,
-    AnalyticsConnectionTestResult,
-    AnalyticsDatabaseKind,
-)
 from app.event_analytics.domain.explore_query import ExploreSortDirection
 from app.event_analytics.domain.query_result import (
     AnalyticsQueryResult,
     ChartSuggestion,
 )
+from app.shared.exceptions import EventAnalyticsRouteError
 from app.shared.types import JSONObject
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StrictBool,
     StrictInt,
     StrictStr,
     StringConstraints,
@@ -40,15 +31,9 @@ AnalyticsSqlText = Annotated[
     StrictStr,
     StringConstraints(min_length=1, max_length=MAX_ANALYTICS_SQL_TEXT_LENGTH),
 ]
-AnalyticsConnectionAddressText = Annotated[
-    StrictStr,
-    StringConstraints(min_length=1, max_length=MAX_ANALYTICS_CONNECTION_ADDRESS_LENGTH),
-]
 ChartKindPayload = Literal["bar", "line", "table", "metric", "pie"]
 ColumnKindPayload = ColumnKind
 ExploreSortDirectionPayload = ExploreSortDirection
-AnalyticsDatabaseKindPayload = AnalyticsDatabaseKind
-AnalyticsConnectionSourcePayload = AnalyticsConnectionSource
 
 
 class AnalyticsPayloadModel(BaseModel):
@@ -137,77 +122,6 @@ class PresetQueryPayload(AnalyticsPayloadModel):
         )
 
 
-class AnalyticsConnectionPayload(AnalyticsPayloadModel):
-    """Safe analytics database connection metadata returned to the frontend."""
-
-    database: AnalyticsDatabaseKindPayload
-    address: StrictStr
-    source: AnalyticsConnectionSourcePayload
-    editable: StrictBool
-    supported_databases: tuple[AnalyticsDatabaseKindPayload, ...]
-    message: StrictStr
-
-    @classmethod
-    def from_domain(
-        cls,
-        connection: AnalyticsConnectionInfo,
-    ) -> AnalyticsConnectionPayload:
-        """Build an API payload from internal analytics connection metadata.
-
-        Args:
-            connection: Internal password-masked connection metadata.
-
-        Returns:
-            Analytics connection payload for UI rendering.
-        """
-        return cls(
-            database=connection.database,
-            address=connection.address,
-            source=connection.source,
-            editable=connection.editable,
-            supported_databases=connection.supported_databases,
-            message=connection.message,
-        )
-
-
-class AnalyticsConnectionTestRequest(AnalyticsPayloadModel):
-    """User-submitted database address connectivity check request."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    database: AnalyticsDatabaseKindPayload = "postgresql"
-    address: AnalyticsConnectionAddressText
-
-
-class AnalyticsConnectionTestResponse(AnalyticsPayloadModel):
-    """Result of a database address connectivity check."""
-
-    database: AnalyticsDatabaseKindPayload
-    address: StrictStr
-    reachable: StrictBool
-    message: StrictStr
-
-    @classmethod
-    def from_domain(
-        cls,
-        result: AnalyticsConnectionTestResult,
-    ) -> AnalyticsConnectionTestResponse:
-        """Build an API payload from a connection test result.
-
-        Args:
-            result: Internal connection test result.
-
-        Returns:
-            Password-masked connectivity check result for UI rendering.
-        """
-        return cls(
-            database=result.database,
-            address=result.address,
-            reachable=result.reachable,
-            message=result.message,
-        )
-
-
 class AnalyticsQueryRequest(AnalyticsPayloadModel):
     """Manual analytics SQL execution request."""
 
@@ -279,9 +193,25 @@ class AnalyticsQueryResponse(AnalyticsPayloadModel):
         )
 
 
-class AnalyticsQueryErrorPayload(AnalyticsPayloadModel):
-    """Structured analytics query error response."""
+class AnalyticsErrorPayload(AnalyticsPayloadModel):
+    """Structured analytics error response."""
 
     error_code: StrictStr
     message: StrictStr
     rejected_reason: StrictStr | None
+
+    @classmethod
+    def from_exception(cls, error: EventAnalyticsRouteError) -> AnalyticsErrorPayload:
+        """Build an API error payload from a route-mapped exception.
+
+        Args:
+            error: Event analytics exception with public API error metadata.
+
+        Returns:
+            Structured analytics error payload for API serialization.
+        """
+        return cls(
+            error_code=error.error_code,
+            message=error.message,
+            rejected_reason=error.rejected_reason,
+        )

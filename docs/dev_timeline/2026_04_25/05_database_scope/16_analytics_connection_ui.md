@@ -1,5 +1,9 @@
 # 16. Analytics connection selector UI
 
+> 상태: 이후 `19_remove_connections_feature.md`에서 connection selector UI와
+> 관련 endpoint는 과제 범위 축소를 위해 삭제했다. 이 문서는 보안 검토 이력으로만
+> 남긴다.
+
 ## 배경
 
 SQL Lab/Explore가 어떤 DB를 보고 있는지 사용자가 UI에서 바로 확인할 수 있어야 한다.

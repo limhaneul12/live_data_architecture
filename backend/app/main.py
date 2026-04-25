@@ -4,29 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 
-from app.event_analytics.application.analytics_connection import (
-    build_analytics_connection_info,
-)
-from app.event_analytics.application.explore_query_service import ExploreQueryService
-from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
-from app.event_analytics.application.sql_query_service import SqlQueryService
-from app.event_analytics.infrastructure.analytics_connection_probe import (
-    check_postgres_connection,
-)
-from app.event_analytics.infrastructure.database_url import to_sqlalchemy_async_url
-from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
-    PostgresAnalyticsQueryRepository,
-)
+from app.container import Container
 from app.event_analytics.interface.consumer_lifespan import (
     EventConsumerRuntime,
     start_event_consumer_runtime,
 )
-from app.event_analytics.interface.router.analytics_router import (
-    install_analytics_routes,
-)
+from app.event_analytics.interface.router import analytics_router
 from app.platform.config import (
     AnalyticsDatabaseConfig,
     AppConfig,
@@ -39,7 +25,6 @@ from app.platform.lifecycle import LifecycleState
 from app.platform.logging import configure_logging
 from app.platform.middleware import install_request_logging_middleware
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 logger = logging.getLogger(__name__)
 DEPENDENCY_HEALTH_TIMEOUT_SECONDS = 1.0
@@ -90,27 +75,9 @@ def create_app(app_config: AppConfig) -> FastAPI:
         database_config=database_config,
         analytics_database_config=analytics_database_config,
     )
-    analytics_connection_info = build_analytics_connection_info(
-        database_config=database_config,
-        analytics_database_config=analytics_database_config,
-    )
-    analytics_engine = create_async_engine(
-        to_sqlalchemy_async_url(str(analytics_database_address)),
-    )
-    analytics_session_factory = async_sessionmaker(
-        analytics_engine,
-        expire_on_commit=False,
-    )
-    analytics_query_repository = PostgresAnalyticsQueryRepository(
-        session_factory=analytics_session_factory,
-    )
-    analytics_query_service = SqlQueryService(
-        policy=AnalyticsSqlPolicy(),
-        repository=analytics_query_repository,
-    )
-    explore_query_service = ExploreQueryService(
-        repository=analytics_query_repository,
-    )
+    container = Container()
+    container.analytics_database_address.override(str(analytics_database_address))
+    container.wire(modules=[analytics_router])
 
     async def refresh_dependency_health() -> None:
         """Refresh runtime dependency health before readiness responses.
@@ -147,6 +114,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
         """
         nonlocal event_consumer_runtime
         configure_logging()
+        await _complete_container_lifecycle(container.init_resources())
         if app_config.event_consumer_enabled:
             lifecycle.mark_database_starting()
             lifecycle.mark_redis_starting()
@@ -172,7 +140,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
                 lifecycle.mark_database_disabled()
                 lifecycle.mark_redis_disabled()
                 event_consumer_runtime = None
-            await analytics_engine.dispose()
+            await _complete_container_lifecycle(container.shutdown_resources())
             lifecycle.mark_stopping()
 
     # local 환경에서만 문서와 OpenAPI 스키마를 노출한다.
@@ -184,19 +152,14 @@ def create_app(app_config: AppConfig) -> FastAPI:
         docs_url=docs_url,
         redoc_url=redoc_url,
     )
+    app.state.container = container
     install_request_logging_middleware(app, logger=logger)
     install_health_routes(
         app,
         lifecycle=lifecycle,
         refresh_dependency_health=refresh_dependency_health,
     )
-    install_analytics_routes(
-        app,
-        query_service=analytics_query_service,
-        explore_query_service=explore_query_service,
-        connection_info=analytics_connection_info,
-        connection_tester=check_postgres_connection,
-    )
+    app.include_router(analytics_router.router)
     return app
 
 
@@ -233,3 +196,17 @@ async def _refresh_redis_health(
         lifecycle.mark_redis_unavailable()
         return
     lifecycle.mark_redis_healthy()
+
+
+async def _complete_container_lifecycle(result: Awaitable[None] | None) -> None:
+    """Await dependency-injector lifecycle calls when async resources are present.
+
+    Args:
+        result: Optional awaitable returned by dependency-injector lifecycle methods.
+
+    Returns:
+        None.
+    """
+    if result is None:
+        return
+    await result

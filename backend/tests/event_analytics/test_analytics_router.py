@@ -1,14 +1,11 @@
 import pytest
+from app.container import Container
 from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import (
     MAX_QUERY_TEXT_LENGTH,
     AnalyticsSqlPolicy,
 )
 from app.event_analytics.application.sql_query_service import SqlQueryService
-from app.event_analytics.domain.analytics_connection import (
-    AnalyticsConnectionInfo,
-    AnalyticsConnectionTestResult,
-)
 from app.event_analytics.domain.explore_query import ExploreQuery
 from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.domain.repositories.analytics_query_repository import (
@@ -17,9 +14,7 @@ from app.event_analytics.domain.repositories.analytics_query_repository import (
 from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
     AnalyticsQueryExecutionError,
 )
-from app.event_analytics.interface.router.analytics_router import (
-    install_analytics_routes,
-)
+from app.event_analytics.interface.router import analytics_router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -57,101 +52,25 @@ class FakeAnalyticsQueryRepository(AnalyticsQueryRepository):
         )
 
 
-async def fake_connection_tester(address: str) -> AnalyticsConnectionTestResult:
-    if "bad-host" in address:
-        return AnalyticsConnectionTestResult(
-            database="postgresql",
-            address="postgresql://analytics_reader:***@bad-host:5432/live_data",
-            reachable=False,
-            message="DB 주소로 연결할 수 없습니다.",
-        )
-    return AnalyticsConnectionTestResult(
-        database="postgresql",
-        address="postgresql://analytics_reader:***@localhost:15432/live_data",
-        reachable=True,
-        message="DB 연결에 성공했습니다.",
-    )
-
-
 def build_client(
     repository: FakeAnalyticsQueryRepository | None = None,
 ) -> tuple[TestClient, FakeAnalyticsQueryRepository]:
     query_repository = repository or FakeAnalyticsQueryRepository()
-    app = FastAPI()
-    install_analytics_routes(
-        app,
-        query_service=SqlQueryService(
+    container = Container()
+    container.event_analytics.sql_query_service.override(
+        SqlQueryService(
             policy=AnalyticsSqlPolicy(),
             repository=query_repository,
-        ),
-        explore_query_service=ExploreQueryService(repository=query_repository),
-        connection_info=AnalyticsConnectionInfo(
-            database="postgresql",
-            address="postgresql://analytics_reader:***@localhost:15432/live_data",
-            source="analytics_read_only_dsn",
-            editable=False,
-            supported_databases=("postgresql",),
-            message="SQL Lab/Explore는 analytics read-only DB 주소를 사용합니다.",
-        ),
-        connection_tester=fake_connection_tester,
+        )
     )
+    container.event_analytics.explore_query_service.override(
+        ExploreQueryService(repository=query_repository)
+    )
+    container.wire(modules=[analytics_router])
+    app = FastAPI()
+    app.state.container = container
+    app.include_router(analytics_router.router)
     return TestClient(app), query_repository
-
-
-def test_connection_endpoint_returns_masked_current_database() -> None:
-    client, _repository = build_client()
-
-    response = client.get("/analytics/connection")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "database": "postgresql",
-        "address": "postgresql://analytics_reader:***@localhost:15432/live_data",
-        "source": "analytics_read_only_dsn",
-        "editable": False,
-        "supported_databases": ["postgresql"],
-        "message": "SQL Lab/Explore는 analytics read-only DB 주소를 사용합니다.",
-    }
-
-
-def test_connection_test_endpoint_returns_success_for_reachable_address() -> None:
-    client, _repository = build_client()
-
-    response = client.post(
-        "/analytics/connection-test",
-        json={
-            "database": "postgresql",
-            "address": "postgresql://analytics_reader:secret@localhost:15432/live_data",
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "database": "postgresql",
-        "address": "postgresql://analytics_reader:***@localhost:15432/live_data",
-        "reachable": True,
-        "message": "DB 연결에 성공했습니다.",
-    }
-
-
-def test_connection_test_endpoint_returns_failure_for_unreachable_address() -> None:
-    client, _repository = build_client()
-
-    response = client.post(
-        "/analytics/connection-test",
-        json={
-            "database": "postgresql",
-            "address": "postgresql://analytics_reader:secret@bad-host:5432/live_data",
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "database": "postgresql",
-        "address": "postgresql://analytics_reader:***@bad-host:5432/live_data",
-        "reachable": False,
-        "message": "DB 주소로 연결할 수 없습니다.",
-    }
 
 
 def test_datasets_endpoint_returns_views_only() -> None:
@@ -170,6 +89,13 @@ def test_datasets_endpoint_returns_views_only() -> None:
         {"name": "event_type", "label": "Event type", "kind": "dimension"},
         {"name": "event_count", "label": "Event count", "kind": "metric"},
     ]
+
+
+def test_connection_endpoints_are_not_registered() -> None:
+    client, _repository = build_client()
+
+    assert client.get("/analytics/connection").status_code == 404
+    assert client.post("/analytics/connection-test", json={}).status_code == 404
 
 
 def test_presets_endpoint_returns_safe_sql_presets() -> None:

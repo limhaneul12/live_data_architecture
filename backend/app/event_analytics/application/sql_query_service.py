@@ -15,6 +15,10 @@ from app.event_analytics.domain.query_result import AnalyticsQueryResult
 from app.event_analytics.domain.repositories.analytics_query_repository import (
     AnalyticsQueryRepository,
 )
+from app.shared.exceptions import (
+    EventAnalyticsDatabaseExecutionError,
+    EventAnalyticsSqlExecutionUnavailableError,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,10 +65,13 @@ class SqlQueryService:
             raise
 
         log_sql_policy_acceptance(validated=validated, sql_hash=sql_hash)
-        rows = await self._repository.execute_select(
-            sql=validated.sql,
-            row_limit=validated.row_limit,
-        )
+        try:
+            rows = await self._repository.execute_select(
+                sql=validated.sql,
+                row_limit=validated.row_limit,
+            )
+        except EventAnalyticsDatabaseExecutionError as exc:
+            raise EventAnalyticsSqlExecutionUnavailableError from exc
         log_sql_execution_result(
             row_count=len(rows.rows),
             sql_hash=sql_hash,
