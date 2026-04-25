@@ -133,7 +133,6 @@ p {
   background: #f9fbfd;
 }
 
-.sidebar-card,
 .sidebar-section,
 .control-panel,
 .explore-canvas,
@@ -148,14 +147,6 @@ p {
   box-shadow: var(--shadow);
 }
 
-.sidebar-card {
-  padding: 20px;
-  background:
-    linear-gradient(135deg, rgba(32, 167, 201, 0.12), rgba(255, 255, 255, 0.9)),
-    var(--surface);
-}
-
-.eyebrow,
 .breadcrumb,
 .control-label {
   color: var(--muted);
@@ -165,16 +156,9 @@ p {
   text-transform: uppercase;
 }
 
-.sidebar-card h1 {
-  margin-bottom: 10px;
-  color: var(--navy);
-  font-size: 1.35rem;
-  letter-spacing: -0.04em;
-}
-
-.sidebar-card p,
 .sidebar-section p,
 .metadata-card p,
+.metadata-header p,
 .panel-header p,
 .empty-panel p,
 .muted,
@@ -182,13 +166,7 @@ p {
   color: var(--muted);
 }
 
-.sidebar-card p {
-  margin-bottom: 0;
-  line-height: 1.55;
-}
-
 .sidebar-section {
-  margin-top: 14px;
   padding: 16px;
 }
 
@@ -246,14 +224,6 @@ p {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.35;
-}
-
-.guardrail-list {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--muted-strong);
-  font-size: 0.86rem;
-  line-height: 1.7;
 }
 
 .superset-main {
@@ -700,6 +670,16 @@ td {
   overflow: auto;
 }
 
+.metadata-header {
+  margin-bottom: 14px;
+}
+
+.metadata-header p {
+  margin-bottom: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .metadata-card {
   padding: 12px;
   border: 1px solid var(--border);
@@ -730,12 +710,38 @@ td {
 }
 
 .metadata-columns span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 7px;
   border-radius: 999px;
   background: white;
   color: var(--muted-strong);
   font-size: 0.72rem;
   font-weight: 800;
+}
+
+.metadata-columns small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+
+.metadata-query-button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  color: var(--brand-dark);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.metadata-query-button:hover {
+  border-color: rgba(32, 167, 201, 0.55);
+  background: var(--brand-soft);
 }
 
 .sql-lab-results {
@@ -761,10 +767,6 @@ td {
 }
 
 @media (max-width: 760px) {
-  .top-nav span {
-    display: none;
-  }
-
   .superset-topbar,
   .page-toolbar,
   .canvas-header,

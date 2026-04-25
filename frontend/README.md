@@ -4,7 +4,7 @@ Next.js(TypeScript) 기반의 Superset-style analytics workspace입니다.
 
 과제 Step5의 “SQL 집계 결과 시각화”를 위해 아래 두 흐름을 제공합니다.
 
-- **Explore**: generated dataset과 columns/chart/limit/sort control을 선택하면 `/analytics/explore-query` structured API가 SQLAlchemy Core로 SELECT를 생성하고 chart/table을 렌더링합니다.
+- **Chart Builder**: generated table과 columns/chart/limit/sort control을 선택하면 `/analytics/explore-query` structured API가 SQLAlchemy Core로 SELECT를 생성하고 chart/table을 렌더링합니다.
 - **SQL Lab**: preset SQL 또는 사용자가 입력한 SELECT를 실행하고 결과 table 전체를 확인합니다.
 
 ## 실행
@@ -27,10 +27,11 @@ BACKEND_API_BASE_URL=http://localhost:8000 npm run start
 
 ## 화면 범위
 
-- Superset을 참고한 top navigation / sidebar / chart control panel
-- generated dataset selector
-- dataset column metadata 기반 Explore controls
-- backend structured Explore query execution
+- Superset을 참고한 simplified header / sidebar / chart control panel
+- generated table selector
+- table column metadata 기반 Chart Builder controls
+- SQL Lab에서 바로 참고할 수 있는 available tables / columns 목록
+- backend structured chart query execution
 - preset SQL buttons
 - SQL Lab textarea
 - Run Chart / Run SQL button

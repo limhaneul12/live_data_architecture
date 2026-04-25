@@ -135,7 +135,7 @@ export function AnalyticsWorkspace() {
   async function runExplore() {
     if (selectedDataset === undefined) {
       setResult(null);
-      setError("실행할 dataset을 먼저 선택해주세요.");
+      setError("실행할 table을 먼저 선택해주세요.");
       setQueryStatus("error");
       return;
     }
@@ -160,7 +160,7 @@ export function AnalyticsWorkspace() {
       setError(
         queryError instanceof Error
           ? queryError.message
-          : "Explore query 실행에 실패했습니다.",
+          : "Chart query 실행에 실패했습니다.",
       );
       setQueryStatus("error");
     }
@@ -196,13 +196,9 @@ export function AnalyticsWorkspace() {
     <main className="superset-shell">
       <header className="superset-topbar">
         <div className="brand-mark">LDA</div>
-        <nav className="top-nav" aria-label="Primary">
+        <div className="top-nav">
           <strong>Event Analytics</strong>
-          <span>Dashboards</span>
-          <span>Charts</span>
-          <span>SQL Lab</span>
-          <span>Datasets</span>
-        </nav>
+        </div>
         <div className={`connection-pill ${metadataLoaded ? "ok" : "error"}`}>
           <span />
           {statusLabel}
@@ -211,15 +207,6 @@ export function AnalyticsWorkspace() {
 
       <div className="superset-layout">
         <aside className="superset-sidebar">
-          <section className="sidebar-card">
-            <p className="eyebrow">Explore workflow</p>
-            <h1>Superset-style Event BI</h1>
-            <p>
-              generated dataset을 고르고 chart control을 조절하면 안전한 SELECT를
-              생성해 바로 시각화합니다.
-            </p>
-          </section>
-
           <section className="sidebar-section">
             <h2>Saved queries</h2>
             <div className="saved-query-list">
@@ -240,24 +227,13 @@ export function AnalyticsWorkspace() {
               ))}
             </div>
           </section>
-
-          <section className="sidebar-section compact">
-            <h2>Guardrails</h2>
-            <ul className="guardrail-list">
-              <li>generated view allowlist</li>
-              <li>Explore uses structured API</li>
-              <li>single SELECT only</li>
-              <li>no functions / joins / subqueries</li>
-              <li>read-only transaction + timeout</li>
-            </ul>
-          </section>
         </aside>
 
         <section className="superset-main">
           <div className="page-toolbar">
             <div>
-              <p className="breadcrumb">Charts / Explore / Event analytics</p>
-              <h2>Untitled event chart</h2>
+              <p className="breadcrumb">Event analytics</p>
+              <h2>{mode === "explore" ? "Chart builder" : "SQL Lab"}</h2>
             </div>
             <div className="toolbar-actions">
               <button
@@ -265,7 +241,7 @@ export function AnalyticsWorkspace() {
                 type="button"
                 onClick={() => setMode("explore")}
               >
-                Explore
+                Chart Builder
               </button>
               <button
                 className={mode === "sql-lab" ? "tab-button active" : "tab-button"}
@@ -282,11 +258,11 @@ export function AnalyticsWorkspace() {
               <aside className="control-panel">
                 <div className="control-header">
                   <h2>Chart controls</h2>
-                  <span>{datasets.length} datasets</span>
+                  <span>{datasets.length} tables</span>
                 </div>
 
                 <label className="control-label" htmlFor="dataset-select">
-                  Datasource
+                  Table
                 </label>
                 <select
                   id="dataset-select"
@@ -415,9 +391,9 @@ export function AnalyticsWorkspace() {
                 <div className="canvas-header">
                   <div>
                     <p className="breadcrumb">
-                      {selectedDataset?.name ?? "dataset"} / {selectedChartKind}
+                      {selectedDataset?.name ?? "table"} / {selectedChartKind}
                     </p>
-                    <h2>{selectedDataset?.label ?? "Dataset"}</h2>
+                    <h2>{selectedDataset?.label ?? "Table"}</h2>
                   </div>
                   <span className={`query-status ${queryStatus}`}>
                     {queryStatusLabel(queryStatus)}
@@ -489,7 +465,10 @@ export function AnalyticsWorkspace() {
               </section>
 
               <aside className="metadata-panel">
-                <h2>Datasets</h2>
+                <div className="metadata-header">
+                  <h2>Available tables</h2>
+                  <p>SQL Lab에서 조회 가능한 generated table 목록입니다.</p>
+                </div>
                 <div className="metadata-list">
                   {datasets.map((dataset) => (
                     <article key={dataset.name} className="metadata-card">
@@ -498,9 +477,22 @@ export function AnalyticsWorkspace() {
                       <p>{dataset.description}</p>
                       <div className="metadata-columns">
                         {dataset.columns.map((column) => (
-                          <span key={column.name}>{column.name}</span>
+                          <span key={column.name}>
+                            {column.name}
+                            <small>{column.kind}</small>
+                          </span>
                         ))}
                       </div>
+                      <button
+                        className="metadata-query-button"
+                        type="button"
+                        onClick={() => {
+                          setActivePreset(null);
+                          setSqlLabSql(exampleSqlForDataset(dataset));
+                        }}
+                      >
+                        Insert sample SELECT
+                      </button>
                     </article>
                   ))}
                 </div>
@@ -556,6 +548,19 @@ function defaultChartFor(dataset: Dataset): ChartKind {
     return "pie";
   }
   return "bar";
+}
+
+function exampleSqlForDataset(dataset: Dataset): string {
+  const columns = defaultColumnsFor(dataset);
+  const orderBy = defaultOrderFor(dataset);
+  const orderDirection = defaultOrderDirectionFor(dataset);
+  return buildExploreSql({
+    dataset,
+    selectedColumns: columns,
+    orderBy,
+    orderDirection,
+    rowLimit: 100,
+  });
 }
 
 function defaultOrderDirectionFor(dataset: Dataset): ExploreOrderDirection {
