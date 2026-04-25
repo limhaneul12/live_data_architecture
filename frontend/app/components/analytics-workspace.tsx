@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
   type AnalyticsConnection,
+  type AnalyticsConnectionTestResult,
   type ChartKind,
   type Dataset,
   type ExploreOrderDirection,
@@ -11,6 +12,7 @@ import {
   fetchDatasets,
   runAnalyticsQuery,
   runExploreQuery,
+  testAnalyticsConnection,
 } from "../lib/api";
 import { ChartPreview } from "./chart-preview";
 import { ResultTable } from "./result-table";
@@ -497,6 +499,37 @@ function ConnectionsWorkspace({
 }) {
   const databaseName = databaseDisplayName(connection?.database ?? "postgresql");
   const connectedTableCount = datasets.length;
+  const [connectionAddress, setConnectionAddress] = useState("");
+  const [connectionTestStatus, setConnectionTestStatus] =
+    useState<QueryStatus>("idle");
+  const [connectionTestResult, setConnectionTestResult] =
+    useState<AnalyticsConnectionTestResult | null>(null);
+  const [connectionTestError, setConnectionTestError] = useState<string | null>(null);
+
+  async function handleConnectionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedAddress = connectionAddress.trim();
+    if (trimmedAddress.length === 0) {
+      setConnectionTestResult(null);
+      setConnectionTestError("DB address를 입력해주세요.");
+      setConnectionTestStatus("error");
+      return;
+    }
+
+    setConnectionTestStatus("loading");
+    setConnectionTestError(null);
+    try {
+      const result = await testAnalyticsConnection(trimmedAddress);
+      setConnectionTestResult(result);
+      setConnectionTestStatus(result.reachable ? "success" : "error");
+    } catch (error) {
+      setConnectionTestResult(null);
+      setConnectionTestError(
+        error instanceof Error ? error.message : "DB 연결 확인에 실패했습니다.",
+      );
+      setConnectionTestStatus("error");
+    }
+  }
 
   return (
     <section className="connections-grid">
@@ -506,8 +539,7 @@ function ConnectionsWorkspace({
             <p className="breadcrumb">Connections</p>
             <h2>Connected database</h2>
             <p>
-              Superset의 database connection 화면처럼 현재 SQL Lab과 Chart Builder가
-              바라보는 DB를 별도 화면에서 확인합니다.
+              현재 연결된 analytics DB와 조회 가능한 generated table 목록을 확인합니다.
             </p>
           </div>
         </div>
@@ -525,6 +557,63 @@ function ConnectionsWorkspace({
         </div>
 
         <DatabaseConnectionPanel connection={connection} />
+
+        <form className="connection-wizard-card" onSubmit={handleConnectionSubmit}>
+          <div className="database-connection-title">
+            <span>Connect database</span>
+            <strong>PostgreSQL only</strong>
+          </div>
+          <p>
+            DB 주소를 입력하면 backend가 연결 가능 여부만 확인합니다. Password는
+            결과 화면에서 masking됩니다.
+          </p>
+
+          <label className="control-label compact" htmlFor="connection-address-input">
+            DB address
+          </label>
+          <input
+            id="connection-address-input"
+            className="superset-input writable"
+            value={connectionAddress}
+            onChange={(event) => setConnectionAddress(event.target.value)}
+            placeholder="postgresql://user:password@localhost:15432/live_data"
+            spellCheck={false}
+          />
+
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={
+              connectionAddress.trim().length === 0 ||
+              connectionTestStatus === "loading"
+            }
+          >
+            {connectionTestStatus === "loading" ? "Connecting..." : "Connect"}
+          </button>
+
+          {connectionTestResult !== null ? (
+            <div
+              className={
+                connectionTestResult.reachable
+                  ? "connection-test-result success"
+                  : "connection-test-result error"
+              }
+            >
+              <strong>
+                {connectionTestResult.reachable ? "Connected" : "Connection failed"}
+              </strong>
+              <span>{connectionTestResult.message}</span>
+              <code>{connectionTestResult.address}</code>
+            </div>
+          ) : null}
+
+          {connectionTestError !== null ? (
+            <div className="connection-test-result error">
+              <strong>Connection failed</strong>
+              <span>{connectionTestError}</span>
+            </div>
+          ) : null}
+        </form>
       </section>
 
       <section className="connected-tables-panel">

@@ -334,6 +334,11 @@ button.connection-pill {
   text-overflow: ellipsis;
 }
 
+.superset-input.writable {
+  background: white;
+  color: var(--text);
+}
+
 .database-connection-card {
   margin-bottom: 16px;
   padding: 12px;
@@ -372,6 +377,54 @@ button.connection-pill {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.connection-wizard-card {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.connection-wizard-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.connection-test-result {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
+.connection-test-result strong {
+  color: var(--navy);
+}
+
+.connection-test-result span,
+.connection-test-result code {
+  overflow-wrap: anywhere;
+}
+
+.connection-test-result code {
+  color: var(--muted-strong);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.connection-test-result.success {
+  border: 1px solid rgba(31, 157, 106, 0.25);
+  background: var(--success-soft);
+}
+
+.connection-test-result.error {
+  border: 1px solid rgba(209, 67, 67, 0.24);
+  background: var(--danger-soft);
 }
 
 .connections-grid {

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from app.event_analytics.constants import MAX_ANALYTICS_SQL_TEXT_LENGTH
+from app.event_analytics.constants import (
+    MAX_ANALYTICS_CONNECTION_ADDRESS_LENGTH,
+    MAX_ANALYTICS_SQL_TEXT_LENGTH,
+)
 from app.event_analytics.domain.analytics_catalog import (
     AnalyticsDataset,
     AnalyticsDatasetColumn,
@@ -14,6 +17,7 @@ from app.event_analytics.domain.analytics_catalog import (
 from app.event_analytics.domain.analytics_connection import (
     AnalyticsConnectionInfo,
     AnalyticsConnectionSource,
+    AnalyticsConnectionTestResult,
     AnalyticsDatabaseKind,
 )
 from app.event_analytics.domain.explore_query import ExploreSortDirection
@@ -35,6 +39,10 @@ from pydantic import (
 AnalyticsSqlText = Annotated[
     StrictStr,
     StringConstraints(min_length=1, max_length=MAX_ANALYTICS_SQL_TEXT_LENGTH),
+]
+AnalyticsConnectionAddressText = Annotated[
+    StrictStr,
+    StringConstraints(min_length=1, max_length=MAX_ANALYTICS_CONNECTION_ADDRESS_LENGTH),
 ]
 ChartKindPayload = Literal["bar", "line", "table", "metric", "pie"]
 ColumnKindPayload = ColumnKind
@@ -159,6 +167,44 @@ class AnalyticsConnectionPayload(AnalyticsPayloadModel):
             editable=connection.editable,
             supported_databases=connection.supported_databases,
             message=connection.message,
+        )
+
+
+class AnalyticsConnectionTestRequest(AnalyticsPayloadModel):
+    """User-submitted database address connectivity check request."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    database: AnalyticsDatabaseKindPayload = "postgresql"
+    address: AnalyticsConnectionAddressText
+
+
+class AnalyticsConnectionTestResponse(AnalyticsPayloadModel):
+    """Result of a database address connectivity check."""
+
+    database: AnalyticsDatabaseKindPayload
+    address: StrictStr
+    reachable: StrictBool
+    message: StrictStr
+
+    @classmethod
+    def from_domain(
+        cls,
+        result: AnalyticsConnectionTestResult,
+    ) -> AnalyticsConnectionTestResponse:
+        """Build an API payload from a connection test result.
+
+        Args:
+            result: Internal connection test result.
+
+        Returns:
+            Password-masked connectivity check result for UI rendering.
+        """
+        return cls(
+            database=result.database,
+            address=result.address,
+            reachable=result.reachable,
+            message=result.message,
         )
 
 

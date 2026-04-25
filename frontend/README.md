@@ -6,7 +6,7 @@ Next.js(TypeScript) 기반의 Superset-style analytics workspace입니다.
 
 - **Chart Builder**: generated table과 columns/chart/limit/sort control을 선택하면 `/analytics/explore-query` structured API가 SQLAlchemy Core로 SELECT를 생성하고 chart/table을 렌더링합니다.
 - **SQL Lab**: 사용자가 입력한 SELECT를 실행하고 결과 table 전체를 확인합니다. 오른쪽 `Available tables`에서 조회 가능한 table name과 column을 바로 확인할 수 있습니다.
-- **Connections**: Superset의 database connection 화면을 참고해 현재 연결된 analytics DB, masked address, read-only DSN 여부, SQL Lab에서 조회 가능한 generated table 목록을 별도 화면으로 보여줍니다.
+- **Connections**: 현재 연결된 analytics DB, masked address, read-only DSN 여부, SQL Lab에서 조회 가능한 generated table 목록을 별도 화면으로 보여줍니다. PostgreSQL 주소를 입력해 backend 연결 가능 여부도 확인할 수 있습니다.
 
 ## 실행
 
@@ -31,7 +31,7 @@ BACKEND_API_BASE_URL=http://localhost:8000 npm run start
 - Superset을 참고한 simplified header / chart control panel
 - top navigation: Charts / SQL Lab / Connections
 - generated table selector
-- Connections 화면의 database card와 connected table 목록
+- Connections 화면의 database card, DB address connection check, connected table 목록
 - table column metadata 기반 Chart Builder controls
 - SQL Lab에서 바로 참고할 수 있는 available tables / columns 목록
 - backend structured chart query execution

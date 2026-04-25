@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from app.event_analytics.application.analytics_catalog import (
     get_datasets,
     get_preset_queries,
@@ -12,12 +14,17 @@ from app.event_analytics.application.explore_query_service import (
 )
 from app.event_analytics.application.query_policy import SqlPolicyViolationError
 from app.event_analytics.application.sql_query_service import SqlQueryService
-from app.event_analytics.domain.analytics_connection import AnalyticsConnectionInfo
+from app.event_analytics.domain.analytics_connection import (
+    AnalyticsConnectionInfo,
+    AnalyticsConnectionTestResult,
+)
 from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
     AnalyticsQueryExecutionError,
 )
 from app.event_analytics.interface.analytics_schemas import (
     AnalyticsConnectionPayload,
+    AnalyticsConnectionTestRequest,
+    AnalyticsConnectionTestResponse,
     AnalyticsDatasetPayload,
     AnalyticsQueryErrorPayload,
     AnalyticsQueryRequest,
@@ -28,12 +35,15 @@ from app.event_analytics.interface.analytics_schemas import (
 from fastapi import APIRouter, FastAPI, status
 from fastapi.responses import JSONResponse
 
+AnalyticsConnectionTester = Callable[[str], Awaitable[AnalyticsConnectionTestResult]]
+
 
 def install_analytics_routes(
     app: FastAPI,
     query_service: SqlQueryService,
     explore_query_service: ExploreQueryService,
     connection_info: AnalyticsConnectionInfo,
+    connection_tester: AnalyticsConnectionTester,
 ) -> None:
     """Install analytics API routes into the FastAPI application.
 
@@ -42,6 +52,7 @@ def install_analytics_routes(
         query_service: Application service for validated analytics SQL execution.
         explore_query_service: Application service for structured Explore queries.
         connection_info: Password-masked analytics database connection metadata.
+        connection_tester: Connectivity check function for user-submitted DB addresses.
 
     Returns:
         None.
@@ -59,6 +70,21 @@ def install_analytics_routes(
             Password-masked database connection metadata for UI display.
         """
         return AnalyticsConnectionPayload.from_domain(connection_info)
+
+    @router.post("/connection-test")
+    async def test_connection(
+        request: AnalyticsConnectionTestRequest,
+    ) -> AnalyticsConnectionTestResponse:
+        """Check connectivity for a user-submitted database address.
+
+        Args:
+            request: Database kind and raw address submitted from the UI.
+
+        Returns:
+            Password-masked connectivity check result.
+        """
+        result = await connection_tester(request.address)
+        return AnalyticsConnectionTestResponse.from_domain(result)
 
     @router.get("/datasets")
     def list_datasets() -> tuple[AnalyticsDatasetPayload, ...]:

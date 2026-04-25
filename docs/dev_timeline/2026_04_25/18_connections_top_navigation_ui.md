@@ -66,7 +66,24 @@ npm run build
 passed
 ```
 
-## 남은 범위
+## 추가 보강: DB address connection check
 
-- 실제 DB address 입력/신규 연결 생성은 보안상 v1 범위에서 제외한다.
-- 현재 Connections 화면은 “연결 생성 wizard”가 아니라 “현재 연결 상태 + 조회 가능한 generated table catalog” 화면이다.
+후속 요청으로 “깊게 갈 필요 없이 DB 주소 연결 성공까지만” 확인하는 범위가 추가됐다.
+
+구현 범위:
+
+- Connections 화면에 PostgreSQL address 입력 form 추가
+- `POST /analytics/connection-test` backend endpoint 추가
+- backend가 user-submitted DSN으로 `SELECT 1` connectivity check 수행
+- 결과 address는 password masking 후 반환
+- 성공/실패 결과를 Connections 화면에 표시
+
+의도적으로 제외한 범위:
+
+- 입력한 DSN을 서버 설정으로 영구 저장하지 않는다.
+- SQL Lab/Chart Builder runtime connection을 즉시 교체하지 않는다.
+- DB별 schema introspection이나 table 자동 생성은 하지 않는다.
+- PostgreSQL 외 DB는 지원하지 않는다.
+
+즉, 현재 Connections 화면은 “현재 연결 상태 + generated table catalog + DB address
+connectivity check”까지만 담당한다.

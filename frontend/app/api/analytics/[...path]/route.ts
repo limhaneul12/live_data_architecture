@@ -11,6 +11,7 @@ type AnalyticsProxyRoute = {
 
 const ANALYTICS_PROXY_ROUTES = {
   connection: { backendPath: "connection", methods: ["GET"] },
+  "connection-test": { backendPath: "connection-test", methods: ["POST"] },
   datasets: { backendPath: "datasets", methods: ["GET"] },
   "explore-query": { backendPath: "explore-query", methods: ["POST"] },
   presets: { backendPath: "presets", methods: ["GET"] },

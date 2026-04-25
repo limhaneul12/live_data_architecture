@@ -19,3 +19,13 @@ class AnalyticsConnectionInfo:
     editable: bool
     supported_databases: tuple[AnalyticsDatabaseKind, ...]
     message: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AnalyticsConnectionTestResult:
+    """Result of a user-submitted analytics database connectivity check."""
+
+    database: AnalyticsDatabaseKind
+    address: str
+    reachable: bool
+    message: str

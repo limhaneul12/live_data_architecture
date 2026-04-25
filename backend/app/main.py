@@ -13,6 +13,9 @@ from app.event_analytics.application.analytics_connection import (
 from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
 from app.event_analytics.application.sql_query_service import SqlQueryService
+from app.event_analytics.infrastructure.analytics_connection_probe import (
+    check_postgres_connection,
+)
 from app.event_analytics.infrastructure.database_url import to_sqlalchemy_async_url
 from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
     PostgresAnalyticsQueryRepository,
@@ -192,6 +195,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
         query_service=analytics_query_service,
         explore_query_service=explore_query_service,
         connection_info=analytics_connection_info,
+        connection_tester=check_postgres_connection,
     )
     return app
 
