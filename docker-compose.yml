@@ -13,6 +13,7 @@ services:
       - .env
     environment:
       DATABASE_DB_ADDRESS: postgresql://live_data:live_data@db:5432/live_data
+      ANALYTICS_DATABASE_DB_ADDRESS: postgresql://analytics_reader:analytics_reader@db:5432/live_data
       SERVICE_EVENT_CONSUMER_ENABLED: "true"
       STREAM_REDIS_URL: redis://redis:6379/0
       STREAM_REDIS_MODE: single

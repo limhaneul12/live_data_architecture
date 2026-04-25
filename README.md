@@ -155,6 +155,7 @@ Backend는 SQL 집계 결과를 프론트에서 사용할 수 있도록 아래 A
 GET  /analytics/datasets
 GET  /analytics/presets
 POST /analytics/query
+POST /analytics/explore-query
 ```
 
 예시 SQL:
@@ -177,6 +178,7 @@ Manual SQL 실행은 서버에서 parser 기반으로 제한합니다.
 - allowlisted generated view만 조회할 수 있습니다.
 - 결과 row는 최대 500개로 제한합니다.
 - PostgreSQL read-only transaction으로 실행합니다.
+- Docker Compose에서는 `analytics_reader` DB role을 생성하고 generated view에만 `SELECT` 권한을 부여합니다. SQL Lab/Explore query는 `ANALYTICS_DATABASE_DB_ADDRESS`가 있으면 이 read-only DSN을 사용합니다.
 
 현재 DB 지원 범위는 PostgreSQL 단일 지원으로 고정합니다. `sqlglot` 기반 AST validation과 SQLAlchemy Core 기반 Chart Builder는 다른 SQL DB로 확장할 여지가 있지만, DB별 dialect, read-only guardrail, timeout, identifier 정책, generated view catalog를 별도 adapter로 검증해야 하므로 과제 v1에서는 구현하지 않습니다. 자세한 확장 검토는 `docs/event_generator/database_support_extension.md`에 정리했습니다.
 

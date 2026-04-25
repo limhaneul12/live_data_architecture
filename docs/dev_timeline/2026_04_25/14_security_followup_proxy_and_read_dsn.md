@@ -36,14 +36,15 @@ SQL Lab/Explore query repository가 해당 DSN을 사용하도록 분리했다.
 - 운영형/보안형 구성에서는 `ANALYTICS_DATABASE_DB_ADDRESS`에 read-only DB role을 넣을 수 있다.
 - 실제 role 생성과 grant는 DB 운영/초기화 정책이 필요하므로 별도 작업으로 남긴다.
 
-## 남은 보안 작업
+## 후속 보안 작업
 
-read-only DSN 분리 기반은 들어갔지만, 아래는 아직 별도 작업이다.
+이 문서 작성 시점에는 아래가 별도 작업으로 남아 있었다. 이후
+`15_analytics_read_only_role.md`에서 compose 기준 role/grant 분리를 구현했다.
 
 1. Postgres read-only role 생성
 2. generated view에만 `SELECT` grant
 3. raw `events` table 직접 조회 권한 제거
-4. SQL Lab을 local/admin feature로 제한할지 결정
+4. SQL Lab을 local/admin feature로 제한할지 결정 — 여전히 제품/운영 정책 결정 사항
 
 ## 검증
 
