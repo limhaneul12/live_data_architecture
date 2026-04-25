@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from app.event_analytics.constants import MAX_ANALYTICS_SQL_TEXT_LENGTH
-from app.event_analytics.domain.analytics_catalog import AnalyticsDataset, PresetQuery
+from app.event_analytics.domain.analytics_catalog import (
+    AnalyticsDataset,
+    AnalyticsDatasetColumn,
+    ColumnKind,
+    PresetQuery,
+)
 from app.event_analytics.domain.query_result import (
     AnalyticsQueryResult,
     ChartSuggestion,
@@ -25,6 +30,7 @@ AnalyticsSqlText = Annotated[
     StringConstraints(min_length=1, max_length=MAX_ANALYTICS_SQL_TEXT_LENGTH),
 ]
 ChartKindPayload = Literal["bar", "line", "table", "metric"]
+ColumnKindPayload = ColumnKind
 
 
 class AnalyticsPayloadModel(BaseModel):
@@ -33,12 +39,36 @@ class AnalyticsPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class AnalyticsDatasetColumnPayload(AnalyticsPayloadModel):
+    """Column descriptor returned with a generated dataset."""
+
+    name: StrictStr
+    label: StrictStr
+    kind: ColumnKindPayload
+
+    @classmethod
+    def from_domain(
+        cls,
+        column: AnalyticsDatasetColumn,
+    ) -> AnalyticsDatasetColumnPayload:
+        """Build an API payload from an internal dataset column.
+
+        Args:
+            column: Internal generated-view column descriptor.
+
+        Returns:
+            Dataset column payload for API serialization.
+        """
+        return cls(name=column.name, label=column.label, kind=column.kind)
+
+
 class AnalyticsDatasetPayload(AnalyticsPayloadModel):
     """Generated dataset descriptor returned to the frontend."""
 
     name: StrictStr
     label: StrictStr
     description: StrictStr
+    columns: tuple[AnalyticsDatasetColumnPayload, ...]
 
     @classmethod
     def from_domain(cls, dataset: AnalyticsDataset) -> AnalyticsDatasetPayload:
@@ -54,6 +84,10 @@ class AnalyticsDatasetPayload(AnalyticsPayloadModel):
             name=dataset.name,
             label=dataset.label,
             description=dataset.description,
+            columns=tuple(
+                AnalyticsDatasetColumnPayload.from_domain(column)
+                for column in dataset.columns
+            ),
         )
 
 

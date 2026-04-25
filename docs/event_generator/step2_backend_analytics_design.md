@@ -168,6 +168,29 @@ POST /analytics/query
 
 프론트의 dataset/view selector에 보여줄 allowlisted generated views를 반환한다.
 
+각 dataset은 Superset-style Explore control이 사용할 수 있도록 column metadata도 함께
+반환한다.
+
+```json
+{
+  "name": "event_type_counts",
+  "label": "Event type counts",
+  "description": "이벤트 타입별 발생 횟수를 집계한 generated view입니다.",
+  "columns": [
+    {"name": "event_type", "label": "Event type", "kind": "dimension"},
+    {"name": "event_count", "label": "Event count", "kind": "metric"}
+  ]
+}
+```
+
+`kind`는 frontend가 기본 projection과 chart control을 잡기 위한 semantic hint다.
+
+| kind | 의미 |
+|---|---|
+| `dimension` | category / label 축 후보 |
+| `metric` | numeric measure / sort 후보 |
+| `temporal` | time-series x-axis 후보 |
+
 ### `GET /analytics/presets`
 
 과제 Step3 예시와 커머스 funnel에 바로 연결되는 preset SQL을 반환한다.
@@ -218,10 +241,12 @@ POST /analytics/query
 
 ## 7. Frontend 연결 의도
 
-다음 frontend branch는 이 API만 바라보면 된다.
+frontend는 이 API만 바라본다.
 
-- `/analytics/datasets`로 table/view selector 구성
+- `/analytics/datasets`로 table/view selector와 Explore column controls 구성
 - `/analytics/presets`로 preset 버튼 구성
-- `/analytics/query`로 SQL 실행 결과/차트 preview 구성
+- `/analytics/query`로 generated SQL 또는 SQL Lab 입력 결과/차트 preview 구성
 
-Superset처럼 복잡한 dashboard builder를 만들기보다, 과제의 핵심인 SQL 집계 결과 확인과 간단한 시각화에 집중한다.
+Superset처럼 복잡한 dashboard 저장/권한/drag-and-drop builder까지 만들지는 않는다. 대신
+Superset의 핵심 사용감인 “dataset 선택 → chart control 조정 → SQL/결과/차트 확인” 흐름을
+가볍게 구현해 과제의 핵심인 SQL 집계 결과 확인과 시각화에 집중한다.

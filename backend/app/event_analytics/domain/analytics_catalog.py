@@ -6,6 +6,16 @@ from dataclasses import dataclass
 from typing import Literal
 
 ChartKind = Literal["bar", "line", "table", "metric"]
+ColumnKind = Literal["dimension", "metric", "temporal"]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AnalyticsDatasetColumn:
+    """Column exposed by an allowlisted generated analytics view."""
+
+    name: str
+    label: str
+    kind: ColumnKind
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -15,6 +25,7 @@ class AnalyticsDataset:
     name: str
     label: str
     description: str
+    columns: tuple[AnalyticsDatasetColumn, ...]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

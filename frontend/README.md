@@ -1,6 +1,11 @@
 # Event analytics frontend
 
-Next.js(TypeScript) 기반의 단일 페이지 SQL analytics workspace입니다.
+Next.js(TypeScript) 기반의 Superset-style analytics workspace입니다.
+
+과제 Step5의 “SQL 집계 결과 시각화”를 위해 아래 두 흐름을 제공합니다.
+
+- **Explore**: generated dataset과 columns/chart/limit/sort control을 선택하면 안전한 SELECT를 생성하고 바로 chart/table을 렌더링합니다.
+- **SQL Lab**: preset SQL 또는 사용자가 입력한 SELECT를 실행하고 결과를 시각화합니다.
 
 ## 실행
 
@@ -22,14 +27,17 @@ BACKEND_API_BASE_URL=http://localhost:8000 npm run start
 
 ## 화면 범위
 
-- generated view selector
+- Superset을 참고한 top navigation / sidebar / chart control panel
+- generated dataset selector
+- dataset column metadata 기반 Explore controls
 - preset SQL buttons
-- SQL textarea
-- Run SQL button
+- SQL Lab textarea
+- Run Chart / Run SQL button
 - query result table
 - chart preview (`bar`, `line`, `metric`, `table`)
+- generated SQL preview
 
-인증, 저장 dashboard, query history, 복잡한 BI builder는 v1 범위에서 제외했습니다.
+인증, 저장 dashboard, query history, dashboard drag-and-drop builder는 v1 범위에서 제외했습니다.
 
 ## 검증
 

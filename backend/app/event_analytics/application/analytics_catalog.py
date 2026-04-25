@@ -2,38 +2,87 @@
 
 from __future__ import annotations
 
-from app.event_analytics.domain.analytics_catalog import AnalyticsDataset, PresetQuery
+from app.event_analytics.domain.analytics_catalog import (
+    AnalyticsDataset,
+    AnalyticsDatasetColumn,
+    ColumnKind,
+    PresetQuery,
+)
+
+
+def column(*, name: str, label: str, kind: ColumnKind) -> AnalyticsDatasetColumn:
+    """Build a generated-view column descriptor.
+
+    Args:
+        name: Physical column name exposed by the generated view.
+        label: Human-readable label for the Explore control panel.
+        kind: Semantic column role used by the frontend chart builder.
+
+    Returns:
+        Dataset column descriptor.
+    """
+    return AnalyticsDatasetColumn(name=name, label=label, kind=kind)
+
 
 DATASETS: tuple[AnalyticsDataset, ...] = (
     AnalyticsDataset(
         name="event_type_counts",
         label="Event type counts",
         description="이벤트 타입별 발생 횟수를 집계한 generated view입니다.",
+        columns=(
+            column(name="event_type", label="Event type", kind="dimension"),
+            column(name="event_count", label="Event count", kind="metric"),
+        ),
     ),
     AnalyticsDataset(
         name="user_event_counts",
         label="User event counts",
         description="유저별 총 이벤트 수를 집계한 generated view입니다.",
+        columns=(
+            column(name="user_id", label="User", kind="dimension"),
+            column(name="event_count", label="Event count", kind="metric"),
+        ),
     ),
     AnalyticsDataset(
         name="hourly_event_counts",
         label="Hourly event counts",
         description="시간대와 이벤트 타입별 이벤트 추이를 집계한 generated view입니다.",
+        columns=(
+            column(name="event_hour", label="Event hour", kind="temporal"),
+            column(name="event_type", label="Event type", kind="dimension"),
+            column(name="event_count", label="Event count", kind="metric"),
+        ),
     ),
     AnalyticsDataset(
         name="error_event_ratio",
         label="Error event ratio",
         description="checkout_error 비율을 계산한 generated view입니다.",
+        columns=(
+            column(name="error_events", label="Error events", kind="metric"),
+            column(name="total_events", label="Total events", kind="metric"),
+            column(name="error_ratio", label="Error ratio", kind="metric"),
+        ),
     ),
     AnalyticsDataset(
         name="commerce_funnel_counts",
         label="Commerce funnel counts",
         description="조회부터 결제 오류까지 커머스 funnel 단계를 집계한 generated view입니다.",
+        columns=(
+            column(name="sort_order", label="Sort order", kind="metric"),
+            column(name="funnel_step", label="Funnel step", kind="dimension"),
+            column(name="event_type", label="Event type", kind="dimension"),
+            column(name="event_count", label="Event count", kind="metric"),
+        ),
     ),
     AnalyticsDataset(
         name="product_event_counts",
         label="Product event counts",
         description="상품별 클릭/장바구니/구매 이벤트를 집계한 generated view입니다.",
+        columns=(
+            column(name="product_id", label="Product", kind="dimension"),
+            column(name="event_type", label="Event type", kind="dimension"),
+            column(name="event_count", label="Event count", kind="metric"),
+        ),
     ),
 )
 

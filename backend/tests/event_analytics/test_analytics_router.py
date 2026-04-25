@@ -60,8 +60,15 @@ def test_datasets_endpoint_returns_views_only() -> None:
 
     assert response.status_code == 200
     dataset_names = {item["name"] for item in response.json()}
+    event_type_dataset = next(
+        item for item in response.json() if item["name"] == "event_type_counts"
+    )
     assert "events" not in dataset_names
     assert "event_type_counts" in dataset_names
+    assert event_type_dataset["columns"] == [
+        {"name": "event_type", "label": "Event type", "kind": "dimension"},
+        {"name": "event_count", "label": "Event count", "kind": "metric"},
+    ]
 
 
 def test_presets_endpoint_returns_safe_sql_presets() -> None:

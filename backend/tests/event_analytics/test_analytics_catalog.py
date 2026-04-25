@@ -9,6 +9,9 @@ from app.event_analytics.application.query_policy import AnalyticsSqlPolicy
 def test_datasets_expose_generated_views_only() -> None:
     datasets = get_datasets()
     names = {dataset.name for dataset in datasets}
+    event_type_dataset = next(
+        dataset for dataset in datasets if dataset.name == "event_type_counts"
+    )
 
     assert "events" not in names
     assert names == ALLOWED_DATASET_NAMES
@@ -20,6 +23,14 @@ def test_datasets_expose_generated_views_only() -> None:
         "commerce_funnel_counts",
         "product_event_counts",
     }.issubset(names)
+    assert tuple(column.name for column in event_type_dataset.columns) == (
+        "event_type",
+        "event_count",
+    )
+    assert tuple(column.kind for column in event_type_dataset.columns) == (
+        "dimension",
+        "metric",
+    )
 
 
 def test_preset_queries_are_policy_validated_selects() -> None:

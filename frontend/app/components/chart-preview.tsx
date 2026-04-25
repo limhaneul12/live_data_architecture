@@ -1,7 +1,8 @@
-import type { QueryResult, QueryRow } from "../lib/api";
+import type { ChartKind, QueryResult, QueryRow } from "../lib/api";
 
 type ChartPreviewProps = {
   result: QueryResult | null;
+  chartKindOverride?: ChartKind;
 };
 
 type ChartPoint = {
@@ -12,7 +13,10 @@ type ChartPoint = {
 
 const COLORS = ["#5b7cfa", "#35c2a1", "#ffb84d", "#ff6b87", "#9b7cff", "#4db6ff"];
 
-export function ChartPreview({ result }: ChartPreviewProps) {
+export function ChartPreview({
+  result,
+  chartKindOverride,
+}: ChartPreviewProps) {
   if (result === null) {
     return (
       <section className="visual-panel empty-panel">
@@ -22,7 +26,11 @@ export function ChartPreview({ result }: ChartPreviewProps) {
     );
   }
 
-  const { chart } = result;
+  const chart = {
+    ...result.chart,
+    chart_kind: chartKindOverride ?? result.chart.chart_kind,
+  };
+  const previewResult = { ...result, chart };
   return (
     <section className="visual-panel">
       <div className="panel-header horizontal">
@@ -35,8 +43,8 @@ export function ChartPreview({ result }: ChartPreviewProps) {
         </div>
       </div>
       {chart.chart_kind === "metric" ? <MetricPreview result={result} /> : null}
-      {chart.chart_kind === "bar" ? <BarPreview result={result} /> : null}
-      {chart.chart_kind === "line" ? <LinePreview result={result} /> : null}
+      {chart.chart_kind === "bar" ? <BarPreview result={previewResult} /> : null}
+      {chart.chart_kind === "line" ? <LinePreview result={previewResult} /> : null}
       {chart.chart_kind === "table" ? <p className="muted">이 결과는 표 형태가 더 적합합니다.</p> : null}
     </section>
   );
