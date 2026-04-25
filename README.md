@@ -204,20 +204,21 @@ npm run dev
 
 세 번째 고민은 SQL 입력 UI의 안전성이었습니다. Superset처럼 raw SQL 입력 경험은 유지하되, 모든 relation을 allowlist로 제한하고 read-only DB role, timeout, row limit을 적용했습니다. 완전한 분석 플랫폼을 만들기보다는 과제에 필요한 SQL 집계와 시각화에 집중했습니다.
 
-## 8. 제출용 스크린샷 위치
-
-실제 제출 시 아래 경로에 스크린샷을 저장하면 됩니다.
+## 8. 스크린샷
 
 | 파일 | 캡처 대상 |
 |---|---|
 | `docs/screenshots/01_health_ready.png` | `/health/ready` 결과 |
-| `docs/screenshots/02_event_ingest.png` | 이벤트 생성 후 Redis/DB 적재 확인 |
 | `docs/screenshots/03_charts_builder.png` | Charts 화면 |
 | `docs/screenshots/04_sql_lab_table.png` | SQL Lab 결과 table |
 | `docs/screenshots/05_view_tables.png` | View Tables preview/save 화면 |
 | `docs/screenshots/06_sql_guardrail_rejection.png` | 위험 SQL 거부 예시 |
 
-현재 반영된 스크린샷은 아래와 같습니다.
+현재 README에는 아래 실제 캡처 이미지를 반영했습니다.
+
+### Health
+
+![Health 화면](docs/screenshots/01_health_ready.png)
 
 ### Charts
 
