@@ -22,6 +22,7 @@ from app.event_analytics.infrastructure.repositories.postgres_analytics_query_re
     build_analytics_runtime_guard_sql,
     build_explore_select_statement,
     build_limited_select_sql,
+    build_view_table_metadata_select_statement,
     json_safe_value,
 )
 from sqlalchemy.dialects import postgresql
@@ -271,6 +272,32 @@ def test_build_explore_select_statement_builds_join_query() -> None:
         "FROM product_event_counts JOIN commerce_funnel_counts ON "
         "product_event_counts.event_type = commerce_funnel_counts.event_type "
         "ORDER BY product_event_counts.event_count DESC \n LIMIT 50"
+    )
+
+
+def test_build_view_table_metadata_select_statement_uses_sqlalchemy_core() -> None:
+    statement = build_view_table_metadata_select_statement("user_event_type_counts")
+
+    compiled = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert compiled == (
+        "SELECT analytics_view_tables.name AS name, "
+        "analytics_view_tables.description AS description, "
+        "analytics_view_tables.source_sql AS source_sql, "
+        "information_schema.columns.column_name AS column_name, "
+        "information_schema.columns.data_type AS data_type, "
+        "information_schema.columns.ordinal_position AS ordinal_position \n"
+        "FROM analytics_view_tables LEFT OUTER JOIN information_schema.columns "
+        "ON information_schema.columns.table_schema = 'public' "
+        "AND analytics_view_tables.name = information_schema.columns.table_name \n"
+        "WHERE analytics_view_tables.name = 'user_event_type_counts' "
+        "ORDER BY analytics_view_tables.name, "
+        "information_schema.columns.ordinal_position"
     )
 
 

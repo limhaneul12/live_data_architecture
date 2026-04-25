@@ -14,6 +14,8 @@ const ANALYTICS_PROXY_ROUTES = {
   "explore-query": { backendPath: "explore-query", methods: ["POST"] },
   presets: { backendPath: "presets", methods: ["GET"] },
   query: { backendPath: "query", methods: ["POST"] },
+  "view-tables": { backendPath: "view-tables", methods: ["GET", "POST"] },
+  "view-tables/preview": { backendPath: "view-tables/preview", methods: ["POST"] },
 } as const satisfies Record<string, AnalyticsProxyRoute>;
 
 type AnalyticsProxyRouteName = keyof typeof ANALYTICS_PROXY_ROUTES;
@@ -57,10 +59,10 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
 
 async function analyticsRoute(context: RouteContext): Promise<AnalyticsProxyRoute | null> {
   const { path } = await context.params;
-  if (path.length !== 1) {
+  if (path.length === 0) {
     return null;
   }
-  const routeName = path[0];
+  const routeName = path.join("/");
   if (!isAnalyticsProxyRouteName(routeName)) {
     return null;
   }
@@ -68,7 +70,8 @@ async function analyticsRoute(context: RouteContext): Promise<AnalyticsProxyRout
 }
 
 function analyticsUrl(backendPath: string): string {
-  return `${BACKEND_API_BASE_URL}/analytics/${encodeURIComponent(backendPath)}`;
+  const safeBackendPath = backendPath.split("/").map(encodeURIComponent).join("/");
+  return `${BACKEND_API_BASE_URL}/analytics/${safeBackendPath}`;
 }
 
 function isAnalyticsProxyRouteName(routeName: string): routeName is AnalyticsProxyRouteName {

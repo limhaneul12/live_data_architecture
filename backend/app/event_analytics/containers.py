@@ -20,10 +20,12 @@ class EventAnalyticsContainer(containers.DeclarativeContainer):
     """Compose event analytics repositories and use cases."""
 
     analytics_session_factory = providers.Dependency(instance_of=async_sessionmaker)
+    management_session_factory = providers.Dependency(instance_of=async_sessionmaker)
 
     analytics_query_repository = providers.Singleton(
         PostgresAnalyticsQueryRepository,
         session_factory=analytics_session_factory,
+        management_session_factory=management_session_factory,
     )
     sql_policy = providers.Factory(AnalyticsSqlPolicy)
     analytics_catalog_service = providers.Factory(

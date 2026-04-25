@@ -76,6 +76,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
         analytics_database_config=analytics_database_config,
     )
     container = Container()
+    container.database_address.override(str(database_config.db_address))
     container.analytics_database_address.override(str(analytics_database_address))
     container.wire(modules=[analytics_router])
 

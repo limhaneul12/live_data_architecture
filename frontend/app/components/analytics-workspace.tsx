@@ -21,7 +21,7 @@ import { ResultTable } from "./result-table";
 const DEFAULT_SQL =
   "SELECT event_type, event_count\nFROM event_type_counts\nORDER BY event_count DESC\nLIMIT 100";
 const DEFAULT_VIEW_TABLE_SQL =
-  "SELECT\n  user_id,\n  event_type,\n  COUNT(*)::bigint AS event_count\nFROM events\nGROUP BY user_id, event_type";
+  "SELECT\n  user_id,\n  event_type,\n  COUNT(*) AS event_count\nFROM events\nGROUP BY user_id, event_type";
 const ROW_LIMIT_OPTIONS = [20, 50, 100, 500] as const;
 const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string }> = [
   { value: "bar", label: "Bar chart" },

@@ -28,7 +28,7 @@ from app.shared.exceptions import (
     EventAnalyticsDatabaseExecutionError as AnalyticsQueryExecutionError,
 )
 from app.shared.types import JSONObject, JSONValue
-from sqlalchemy import DateTime, Text, column, func, select, table, text
+from sqlalchemy import DateTime, Integer, Text, column, func, select, table, text
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -45,6 +45,15 @@ ANALYTICS_STATEMENT_TIMEOUT_MS: Final = 3_000
 ANALYTICS_LOCK_TIMEOUT_MS: Final = 500
 ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT_MS: Final = 5_000
 ANALYTICS_SEARCH_PATH_SQL: Final = "public, pg_catalog"
+INFORMATION_SCHEMA_COLUMNS: Final = table(
+    "columns",
+    column("table_schema", Text),
+    column("table_name", Text),
+    column("column_name", Text),
+    column("data_type", Text),
+    column("ordinal_position", Integer),
+    schema="information_schema",
+)
 
 
 @dataclass(slots=True)
@@ -83,16 +92,23 @@ class PostgresAnalyticsQueryRepository(
 ):
     """Execute validated analytics SELECT statements against PostgreSQL."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        management_session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
         """Initialize the repository with a root-owned session factory.
 
         Args:
-            session_factory: Factory that creates SQLAlchemy async sessions.
+            session_factory: Factory that creates analytics read sessions.
+            management_session_factory: Optional factory for view table DDL and
+                metadata operations.
 
         Returns:
             None.
         """
         self._session_factory = session_factory
+        self._management_session_factory = management_session_factory or session_factory
 
     async def execute_select(self, sql: str, row_limit: int) -> AnalyticsRows:
         """Execute a validated read-only SELECT and return JSON-safe rows.
@@ -150,7 +166,7 @@ class PostgresAnalyticsQueryRepository(
             User-created view table metadata with current columns.
         """
         try:
-            async with self._session_factory() as session:
+            async with self._management_session_factory() as session:
                 return await load_view_tables(session, name=None)
         except SQLAlchemyError as exc:
             raise AnalyticsQueryExecutionError from exc
@@ -171,10 +187,14 @@ class PostgresAnalyticsQueryRepository(
         Returns:
             Created or updated view table metadata.
         """
+        reader_role_name = await self._analytics_reader_role_name()
         try:
-            async with self._session_factory() as session, session.begin():
+            async with self._management_session_factory() as session, session.begin():
                 await session.execute(
                     text(build_create_view_table_sql(name, source_sql))
+                )
+                await session.execute(
+                    text(build_grant_view_table_sql(name, reader_role_name))
                 )
                 await session.execute(
                     build_upsert_view_table_metadata_statement(
@@ -187,6 +207,22 @@ class PostgresAnalyticsQueryRepository(
         except SQLAlchemyError as exc:
             raise AnalyticsQueryExecutionError from exc
         return view_tables[0]
+
+    async def _analytics_reader_role_name(self) -> str:
+        """Return the PostgreSQL role used for analytics read queries.
+
+        Args:
+            None.
+
+        Returns:
+            Current database role name from the analytics read connection.
+        """
+        try:
+            async with self._session_factory() as session:
+                result = await session.execute(text("SELECT current_user"))
+        except SQLAlchemyError as exc:
+            raise AnalyticsQueryExecutionError from exc
+        return str(result.scalar_one())
 
     async def preview_view_table_sql(
         self,
@@ -202,23 +238,34 @@ class PostgresAnalyticsQueryRepository(
         Returns:
             JSON-safe preview rows.
         """
-        return await self.execute_select(source_sql, row_limit)
+        limited_sql = build_limited_select_sql(source_sql)
+        try:
+            return await self._execute_statement(
+                text(limited_sql),
+                parameters={"row_limit": row_limit},
+                session_factory=self._management_session_factory,
+            )
+        except SQLAlchemyError as exc:
+            raise AnalyticsQueryExecutionError from exc
 
     async def _execute_statement(
         self,
         statement: TextClause | AnalyticsSelectStatement,
         parameters: dict[str, int] | None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> AnalyticsRows:
         """Execute a prepared analytics statement with PostgreSQL guardrails.
 
         Args:
             statement: Textual or SQLAlchemy Core SELECT statement.
             parameters: Optional bind parameters for the statement.
+            session_factory: Optional session factory override.
 
         Returns:
             JSON-safe row set from PostgreSQL.
         """
-        async with self._session_factory() as session, session.begin():
+        active_session_factory = session_factory or self._session_factory
+        async with active_session_factory() as session, session.begin():
             for guard_sql in build_analytics_runtime_guard_sql():
                 await session.execute(text(guard_sql))
             result = await session.execute(statement, parameters)
@@ -255,6 +302,31 @@ def build_create_view_table_sql(name: str, source_sql: str) -> str:
         PostgreSQL CREATE OR REPLACE VIEW statement.
     """
     return f"CREATE OR REPLACE VIEW {name} AS {source_sql}"  # nosec
+
+
+def build_grant_view_table_sql(name: str, role_name: str) -> str:
+    """Build DCL that lets the analytics read role query a saved view table.
+
+    Args:
+        name: Validated lowercase view table name.
+        role_name: Database role name read from the analytics connection.
+
+    Returns:
+        PostgreSQL GRANT statement for the saved view table.
+    """
+    return f"GRANT SELECT ON TABLE {name} TO {quoted_identifier(role_name)}"  # nosec
+
+
+def quoted_identifier(identifier: str) -> str:
+    """Quote a PostgreSQL identifier.
+
+    Args:
+        identifier: Raw database identifier.
+
+    Returns:
+        Double-quoted PostgreSQL identifier.
+    """
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 def build_upsert_view_table_metadata_statement(
@@ -452,26 +524,7 @@ async def load_view_tables(
     Returns:
         User-created view table metadata.
     """
-    result = await session.execute(
-        text(
-            """
-            SELECT
-              view_tables.name,
-              view_tables.description,
-              view_tables.source_sql,
-              columns.column_name,
-              columns.data_type,
-              columns.ordinal_position
-            FROM analytics_view_tables AS view_tables
-            LEFT JOIN information_schema.columns AS columns
-              ON columns.table_schema = 'public'
-             AND columns.table_name = view_tables.name
-            WHERE (:name IS NULL OR view_tables.name = :name)
-            ORDER BY view_tables.name, columns.ordinal_position
-            """
-        ),
-        {"name": name},
-    )
+    result = await session.execute(build_view_table_metadata_select_statement(name))
     grouped_view_tables: dict[str, ViewTableAccumulator] = {}
     for row in result.mappings().all():
         view_name = str(row["name"])
@@ -501,6 +554,45 @@ async def load_view_tables(
         )
         for view_name, view_table in grouped_view_tables.items()
     )
+
+
+def build_view_table_metadata_select_statement(
+    name: str | None,
+) -> AnalyticsSelectStatement:
+    """Build a Core metadata query for user-created view tables.
+
+    Args:
+        name: Optional view table name filter.
+
+    Returns:
+        SQLAlchemy Core SELECT for metadata and information_schema column lookup.
+    """
+    view_tables = AnalyticsViewTableRecord.__table__
+    information_schema_columns = INFORMATION_SCHEMA_COLUMNS
+    statement = (
+        select(
+            view_tables.c.name.label("name"),
+            view_tables.c.description.label("description"),
+            view_tables.c.source_sql.label("source_sql"),
+            information_schema_columns.c.column_name.label("column_name"),
+            information_schema_columns.c.data_type.label("data_type"),
+            information_schema_columns.c.ordinal_position.label("ordinal_position"),
+        )
+        .select_from(
+            view_tables.outerjoin(
+                information_schema_columns,
+                (information_schema_columns.c.table_schema == "public")
+                & (information_schema_columns.c.table_name == view_tables.c.name),
+            )
+        )
+        .order_by(
+            view_tables.c.name,
+            information_schema_columns.c.ordinal_position,
+        )
+    )
+    if name is not None:
+        statement = statement.where(view_tables.c.name == name)
+    return cast(AnalyticsSelectStatement, statement)
 
 
 def column_kind_from_postgres_type(data_type: str) -> ColumnKind:
