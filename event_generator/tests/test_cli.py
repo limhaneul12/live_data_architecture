@@ -63,7 +63,7 @@ def test_cli_rejects_invalid_phase_bounds() -> None:
     assert "min phase seconds must be less than or equal to max" in result.stderr
 
 
-def test_cli_applies_custom_start_time_to_first_event() -> None:
+def test_cli_applies_custom_start_time_date_to_first_event() -> None:
     result = run_generator(
         "--max-events",
         "1",
@@ -77,7 +77,7 @@ def test_cli_applies_custom_start_time_to_first_event() -> None:
     payload = json.loads(result.stdout)
 
     assert result.returncode == 0
-    assert payload["occurred_at"] == "2026-05-01T12:30:00.000Z"
+    assert str(payload["occurred_at"]).startswith("2026-05-01T")
 
 
 def test_cli_exits_cleanly_when_sigterm_requests_shutdown() -> None:

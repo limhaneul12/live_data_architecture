@@ -51,7 +51,7 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 | `--seed` | 자동 생성 | 재현 가능한 이벤트/phase 생성이 필요할 때 명시하는 seed |
 | `--max-events` | 없음 | 지정하지 않으면 infinite mode |
 | `--producer-id` | `producer_local` | 이벤트에 기록되는 producer 식별자 |
-| `--start-time` | `2026-04-24T00:00:00Z` | deterministic event clock 시작 시각 |
+| `--start-time` | `2026-04-24T00:00:00Z` | 이벤트 timestamp의 기준 날짜. 월/일은 고정하고 시간대만 랜덤 분포로 생성 |
 | `--slow-rate` | `1` | slow phase events/sec |
 | `--normal-rate` | `5` | normal phase events/sec |
 | `--burst-rate` | `20` | burst phase events/sec |
@@ -73,6 +73,18 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 | `checkout_error` | 7% | 결제 이탈과 장애 원인을 분석하기 위함 |
 
 구매나 오류 이벤트보다 페이지 조회와 클릭이 더 자주 발생하도록 비율을 잡았습니다. 이렇게 하면 이후 funnel 분석에서 `page_view -> product_click -> add_to_cart -> purchase` 흐름이 자연스럽게 보입니다.
+
+## 발생 시각 설계
+
+`occurred_at`은 `--start-time`의 월/일을 기준 날짜로 사용하되, 시/분/초/밀리초는 이벤트마다 랜덤하게 생성합니다. 과제의 핵심 분석은 일자별 장기 추세가 아니라 “시간대별 이벤트 추이”이므로 월/일까지 랜덤하게 넓히지 않고 하루 안의 hour-of-day 분포만 표현합니다.
+
+시간대 분포는 `traffic_phase`와 연결합니다.
+
+- `slow`: 0~6시, 22~23시 같은 저활동 시간대 비중을 높임
+- `normal`: 오전~오후 업무/탐색 시간대에 넓게 분포
+- `burst`: 점심/퇴근 후/저녁 피크 시간대 비중을 높임
+
+이 방식은 실제 emit 순서와 event time이 반드시 오름차순이라는 뜻은 아닙니다. Stream은 producer가 발생시킨 순서대로 흘러가지만, analytics 관점의 `occurred_at`은 하루 안의 시간대 분포를 더 잘 보여주도록 샘플링됩니다.
 
 ## 필드 구조
 
@@ -100,7 +112,7 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 ## 출력 예시
 
 ```json
-{"schema_version":"web_event.v1","event_id":"evt_7f3a9c1e2b4098ab76cd","event_type":"product_click","occurred_at":"2026-04-24T00:00:00.000Z","user_id":"user_013","traffic_phase":"normal","producer_id":"producer_local","page_path":"/products/prod_iphone_15","category_id":"cat_smartphone","product_id":"prod_iphone_15","amount":null,"currency":null,"error_code":null,"error_message":null}
+{"schema_version":"web_event.v1","event_id":"evt_7f3a9c1e2b4098ab76cd","event_type":"product_click","occurred_at":"2026-04-24T19:42:17.318Z","user_id":"user_013","traffic_phase":"burst","producer_id":"producer_local","page_path":"/products/prod_iphone_15","category_id":"cat_smartphone","product_id":"prod_iphone_15","amount":null,"currency":null,"error_code":null,"error_message":null}
 ```
 
 ## 종료

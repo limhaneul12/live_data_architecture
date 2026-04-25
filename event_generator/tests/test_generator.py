@@ -64,6 +64,24 @@ def test_generates_only_allowed_event_types() -> None:
     assert {event.event_type.value for event in events} <= allowed
 
 
+def test_occurred_at_keeps_configured_date_but_randomizes_hours() -> None:
+    events = list(build_generator().iter_events(max_events=500))
+    event_dates = {event.occurred_at.date() for event in events}
+    event_hours = {event.occurred_at.hour for event in events}
+
+    assert event_dates == {datetime(2026, 4, 24, tzinfo=UTC).date()}
+    assert len(event_hours) > 12
+
+
+def test_occurred_at_hour_distribution_favors_active_hours() -> None:
+    events = list(build_generator().iter_events(max_events=5_000))
+    counts = Counter(event.occurred_at.hour for event in events)
+    overnight_count = sum(counts[hour] for hour in range(6))
+    active_hour_count = sum(counts[hour] for hour in range(10, 22))
+
+    assert active_hour_count > overnight_count
+
+
 def test_large_sample_contains_all_required_event_types() -> None:
     events = list(build_generator().iter_events(max_events=1_000))
     counts = Counter(event.event_type for event in events)

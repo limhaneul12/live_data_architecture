@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from event_generator.models import EventType, GeneratedEvent, TrafficPhase
 from event_generator.traffic_profile import TrafficProfile
@@ -18,6 +18,87 @@ _EVENT_TYPES: tuple[EventType, ...] = (
     EventType.CHECKOUT_ERROR,
 )
 _EVENT_WEIGHTS: tuple[int, ...] = (45, 25, 15, 8, 7)
+_DAY_HOURS = tuple(range(24))
+_HOUR_WEIGHTS_BY_PHASE: dict[TrafficPhase, tuple[int, ...]] = {
+    TrafficPhase.SLOW: (
+        9,
+        9,
+        8,
+        7,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        3,
+        4,
+        5,
+        6,
+        6,
+        7,
+        8,
+        9,
+    ),
+    TrafficPhase.NORMAL: (
+        2,
+        1,
+        1,
+        1,
+        1,
+        2,
+        4,
+        6,
+        8,
+        9,
+        10,
+        10,
+        9,
+        9,
+        9,
+        9,
+        10,
+        10,
+        9,
+        8,
+        7,
+        6,
+        4,
+        3,
+    ),
+    TrafficPhase.BURST: (
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        4,
+        7,
+        9,
+        10,
+        12,
+        12,
+        10,
+        9,
+        10,
+        12,
+        15,
+        18,
+        20,
+        18,
+        14,
+        8,
+        4,
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +179,7 @@ class EventGenerator:
         self._rng = random.Random(config.seed)  # noqa: S311
         self._config = config
         self._traffic_profile = traffic_profile
-        self._current_time = config.start_time.astimezone(UTC)
+        self._event_date = config.start_time.astimezone(UTC).date()
         self._event_id_prefix = self._rng.getrandbits(32)
         self._event_sequence = 0
 
@@ -127,9 +208,7 @@ class EventGenerator:
         """
         phase = self._traffic_profile.next_phase()
         event_type = self._choose_event_type()
-        event = self._build_event(event_type=event_type, phase=phase)
-        self._advance_clock(phase)
-        return event
+        return self._build_event(event_type=event_type, phase=phase)
 
     def seconds_until_next_event(self, phase: TrafficPhase) -> float:
         """Return the phase-specific delay before the next event should be emitted.
@@ -151,6 +230,20 @@ class EventGenerator:
             self._event_sequence * _EVENT_ID_COUNTER_MULTIPLIER
         ) & _EVENT_ID_COUNTER_MASK
         return f"evt_{self._event_id_prefix:08x}{permuted_counter:016x}"
+
+    def _choose_occurred_at(self, phase: TrafficPhase) -> datetime:
+        weights = _HOUR_WEIGHTS_BY_PHASE[phase]
+        hour = self._rng.choices(_DAY_HOURS, weights=weights, k=1)[0]
+        return datetime(
+            self._event_date.year,
+            self._event_date.month,
+            self._event_date.day,
+            hour,
+            self._rng.randrange(60),
+            self._rng.randrange(60),
+            self._rng.randrange(1_000) * 1_000,
+            tzinfo=UTC,
+        )
 
     def _build_event(
         self, *, event_type: EventType, phase: TrafficPhase
@@ -234,7 +327,7 @@ class EventGenerator:
         return GeneratedEvent(
             event_id=event_id,
             event_type=event_type,
-            occurred_at=self._current_time,
+            occurred_at=self._choose_occurred_at(phase),
             user_id=user_id,
             traffic_phase=phase,
             producer_id=self._config.producer_id,
@@ -245,11 +338,6 @@ class EventGenerator:
             currency=currency,
             error_code=error_code,
             error_message=error_message,
-        )
-
-    def _advance_clock(self, phase: TrafficPhase) -> None:
-        self._current_time += timedelta(
-            seconds=self._traffic_profile.seconds_between_events(phase),
         )
 
     def _choose_user_id(self) -> str:
