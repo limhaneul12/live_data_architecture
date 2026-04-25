@@ -217,6 +217,24 @@ npm run dev
 | `docs/screenshots/05_view_tables.png` | View Tables preview/save 화면 |
 | `docs/screenshots/06_sql_guardrail_rejection.png` | 위험 SQL 거부 예시 |
 
+현재 반영된 스크린샷은 아래와 같습니다.
+
+### Charts
+
+![Charts 화면](docs/screenshots/03_charts_builder.png)
+
+### SQL Lab
+
+![SQL Lab 화면](docs/screenshots/04_sql_lab_table.png)
+
+### View Tables
+
+![View Tables 화면](docs/screenshots/05_view_tables.png)
+
+### SQL Guardrail rejection
+
+![SQL guardrail rejection](docs/screenshots/06_sql_guardrail_rejection.png)
+
 ## 9. 검증 명령
 
 ```bash
@@ -228,4 +246,13 @@ docker compose config --quiet
 git diff --check
 ```
 
-상세 설계와 개발 이력은 `docs/` 아래에 정리했습니다.
+## 10. 설계 문서
+
+로그/스키마/드레인 설계 의도는 아래 문서에 정리했습니다.
+
+- [JSON log design](docs/log_design/json_log.md)
+- [Schemas design](docs/log_design/schemas.md)
+- [Drain design](docs/log_design/drain.md)
+- [Generator log design](docs/log_design/gernerator_log.md)
+
+상세 개발 이력은 `docs/` 아래에 정리했습니다.
