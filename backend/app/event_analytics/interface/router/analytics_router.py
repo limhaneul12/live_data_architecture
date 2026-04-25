@@ -5,14 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from app.container import Container
-from app.event_analytics.application.analytics_catalog import (
-    get_datasets,
-    get_preset_queries,
+from app.event_analytics.application.analytics_catalog import get_preset_queries
+from app.event_analytics.application.analytics_catalog_service import (
+    AnalyticsCatalogService,
 )
 from app.event_analytics.application.explore_query_service import (
     ExploreQueryService,
 )
 from app.event_analytics.application.sql_query_service import SqlQueryService
+from app.event_analytics.application.view_table_service import ViewTableService
 from app.event_analytics.interface.schemas import (
     AnalyticsDatasetPayload,
     AnalyticsErrorPayload,
@@ -20,6 +21,9 @@ from app.event_analytics.interface.schemas import (
     AnalyticsQueryResponse,
     ExploreQueryRequest,
     PresetQueryPayload,
+    ViewTableCreateRequest,
+    ViewTablePayload,
+    ViewTablePreviewRequest,
 )
 from app.shared.exceptions import (
     EventAnalyticsRouteError,
@@ -51,6 +55,17 @@ EXPLORE_QUERY_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
         "description": "Analytics database is unavailable for Explore execution.",
     },
 }
+# Broad type justified: FastAPI's `responses` parameter is typed as dict[str, Any].
+VIEW_TABLE_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    status.HTTP_400_BAD_REQUEST: {
+        "model": AnalyticsErrorPayload,
+        "description": "View table SQL or metadata failed validation.",
+    },
+    status.HTTP_503_SERVICE_UNAVAILABLE: {
+        "model": AnalyticsErrorPayload,
+        "description": "Analytics database is unavailable for view table requests.",
+    },
+}
 
 router = APIRouter(
     prefix="/analytics",
@@ -80,17 +95,24 @@ def analytics_error_payload(error: EventAnalyticsRouteError) -> dict[str, str | 
         "may query."
     ),
 )
-def list_datasets() -> tuple[AnalyticsDatasetPayload, ...]:
+@map_event_analytics_route_errors(analytics_error_payload)
+@inject
+async def list_datasets(
+    service: AnalyticsCatalogService = Depends(
+        Provide[Container.event_analytics.analytics_catalog_service],
+    ),
+) -> tuple[AnalyticsDatasetPayload, ...] | JSONResponse:
     """Return generated datasets that manual SQL may reference.
 
     Args:
-        None.
+        service: Dataset catalog service resolved by FastAPI DI.
 
     Returns:
         Allowlisted generated dataset descriptors.
     """
     return tuple(
-        AnalyticsDatasetPayload.from_domain(dataset) for dataset in get_datasets()
+        AnalyticsDatasetPayload.from_domain(dataset)
+        for dataset in await service.list_datasets()
     )
 
 
@@ -180,9 +202,110 @@ async def run_explore_query(
     """
     result = await service.execute(
         dataset_name=request.dataset,
-        column_names=tuple(request.columns),
-        order_by=request.order_by,
+        column_refs=request.column_refs(),
+        joins=request.join_refs(),
+        order_by=request.order_by_ref(),
         order_direction=request.order_direction,
         row_limit=request.row_limit,
     )
     return AnalyticsQueryResponse.from_domain(result)
+
+
+@router.get(
+    "/view-tables",
+    response_model=tuple[ViewTablePayload, ...],
+    status_code=status.HTTP_200_OK,
+    responses=VIEW_TABLE_ERROR_RESPONSES,
+    summary="List user-created analytics view tables",
+    description="Returns user-created view tables saved as chartable datasets.",
+)
+@map_event_analytics_route_errors(analytics_error_payload)
+@inject
+async def list_view_tables(
+    service: AnalyticsCatalogService = Depends(
+        Provide[Container.event_analytics.analytics_catalog_service],
+    ),
+) -> tuple[ViewTablePayload, ...] | JSONResponse:
+    """Return user-created analytics view tables.
+
+    Args:
+        service: Dataset catalog service resolved by FastAPI DI.
+
+    Returns:
+        User-created view table metadata.
+    """
+    return tuple(
+        ViewTablePayload.from_domain(view_table)
+        for view_table in await service.list_view_tables()
+    )
+
+
+@router.post(
+    "/view-tables/preview",
+    response_model=AnalyticsQueryResponse,
+    status_code=status.HTTP_200_OK,
+    responses=VIEW_TABLE_ERROR_RESPONSES,
+    summary="Preview a view table source query",
+    description=(
+        "Validates a SELECT intended for a user-created view table and returns "
+        "a small preview result."
+    ),
+)
+@map_event_analytics_route_errors(analytics_error_payload)
+@inject
+async def preview_view_table(
+    request: ViewTablePreviewRequest,
+    service: ViewTableService = Depends(
+        Provide[Container.event_analytics.view_table_service],
+    ),
+) -> AnalyticsQueryResponse | JSONResponse:
+    """Preview one user-created view table SELECT.
+
+    Args:
+        request: View table preview payload.
+        service: View table service resolved by FastAPI DI.
+
+    Returns:
+        Preview query result or structured validation error.
+    """
+    result = await service.preview(
+        source_sql=request.source_sql,
+        row_limit=request.row_limit,
+    )
+    return AnalyticsQueryResponse.from_domain(result)
+
+
+@router.post(
+    "/view-tables",
+    response_model=AnalyticsDatasetPayload,
+    status_code=status.HTTP_200_OK,
+    responses=VIEW_TABLE_ERROR_RESPONSES,
+    summary="Save a user-created analytics view table",
+    description=(
+        "Creates or replaces a PostgreSQL view from a validated SELECT and "
+        "saves it as a Chart Builder dataset."
+    ),
+)
+@map_event_analytics_route_errors(analytics_error_payload)
+@inject
+async def create_view_table(
+    request: ViewTableCreateRequest,
+    service: ViewTableService = Depends(
+        Provide[Container.event_analytics.view_table_service],
+    ),
+) -> AnalyticsDatasetPayload | JSONResponse:
+    """Create or replace one analytics view table.
+
+    Args:
+        request: View table create-or-replace payload.
+        service: View table service resolved by FastAPI DI.
+
+    Returns:
+        Dataset descriptor for the saved view table or structured error.
+    """
+    dataset = await service.create(
+        name=request.name,
+        description=request.description,
+        source_sql=request.source_sql,
+    )
+    return AnalyticsDatasetPayload.from_domain(dataset)

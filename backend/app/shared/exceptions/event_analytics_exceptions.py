@@ -78,6 +78,28 @@ class EventAnalyticsExploreQueryValidationError(EventAnalyticsRouteError):
         self.reason = reason
 
 
+class EventAnalyticsViewTableValidationError(EventAnalyticsRouteError):
+    """Raised when a user-created view table request is invalid."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        """Initialize a view table validation failure.
+
+        Args:
+            reason: Stable machine-readable validation rejection reason.
+            message: Human-readable rejection detail.
+
+        Returns:
+            None.
+        """
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code="view_table_violation",
+            message=message,
+            rejected_reason=reason,
+        )
+        self.reason = reason
+
+
 class EventAnalyticsDatabaseExecutionError(Exception):
     """Raised when PostgreSQL cannot execute a validated analytics read."""
 
@@ -118,5 +140,25 @@ class EventAnalyticsExploreExecutionUnavailableError(EventAnalyticsRouteError):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             error_code="analytics_database_unavailable",
             message="analytics Explore query를 실행할 수 없습니다.",
+            rejected_reason=None,
+        )
+
+
+class EventAnalyticsViewTableExecutionUnavailableError(EventAnalyticsRouteError):
+    """Raised when a view table request cannot execute against the database."""
+
+    def __init__(self) -> None:
+        """Initialize a view table database-unavailable failure.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        super().__init__(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_code="analytics_database_unavailable",
+            message="analytics view table 요청을 실행할 수 없습니다.",
             rejected_reason=None,
         )

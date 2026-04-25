@@ -1,13 +1,25 @@
 import pytest
 from app.container import Container
+from app.event_analytics.application.analytics_catalog_service import (
+    AnalyticsCatalogService,
+)
 from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import (
     MAX_QUERY_TEXT_LENGTH,
     AnalyticsSqlPolicy,
 )
 from app.event_analytics.application.sql_query_service import SqlQueryService
-from app.event_analytics.domain.explore_query import ExploreQuery
+from app.event_analytics.application.view_table_service import ViewTableService
+from app.event_analytics.domain.analytics_catalog import (
+    AnalyticsDataset,
+    AnalyticsDatasetColumn,
+    AnalyticsViewTable,
+)
+from app.event_analytics.domain.explore_query import ExploreColumnRef, ExploreQuery
 from app.event_analytics.domain.query_result import AnalyticsRows
+from app.event_analytics.domain.repositories.analytics_dataset_repository import (
+    AnalyticsDatasetRepository,
+)
 from app.event_analytics.domain.repositories.analytics_query_repository import (
     AnalyticsQueryRepository,
 )
@@ -19,12 +31,16 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
-class FakeAnalyticsQueryRepository(AnalyticsQueryRepository):
+class FakeAnalyticsQueryRepository(
+    AnalyticsQueryRepository, AnalyticsDatasetRepository
+):
     def __init__(self, fail: bool = False) -> None:
         self.fail = fail
         self.executed_sql: list[str] = []
         self.executed_row_limits: list[int] = []
         self.executed_explore_queries: list[ExploreQuery] = []
+        self.created_view_tables: list[tuple[str, str, str]] = []
+        self.view_tables: list[AnalyticsViewTable] = []
 
     async def execute_select(self, sql: str, row_limit: int) -> AnalyticsRows:
         if self.fail:
@@ -51,20 +67,82 @@ class FakeAnalyticsQueryRepository(AnalyticsQueryRepository):
             ),
         )
 
+    async def list_view_table_datasets(self) -> tuple[AnalyticsDataset, ...]:
+        return tuple(
+            AnalyticsDataset(
+                name=view_table.name,
+                label=view_table.name,
+                description=view_table.description,
+                columns=view_table.columns,
+                origin="view_table",
+            )
+            for view_table in self.view_tables
+        )
+
+    async def list_view_tables(self) -> tuple[AnalyticsViewTable, ...]:
+        return tuple(self.view_tables)
+
+    async def create_or_replace_view_table(
+        self,
+        name: str,
+        description: str,
+        source_sql: str,
+    ) -> AnalyticsViewTable:
+        self.created_view_tables.append((name, description, source_sql))
+        view_table = AnalyticsViewTable(
+            name=name,
+            description=description,
+            source_sql=source_sql,
+            columns=(
+                AnalyticsDatasetColumn(
+                    name="user_id",
+                    label="user_id",
+                    kind="dimension",
+                ),
+                AnalyticsDatasetColumn(
+                    name="event_count",
+                    label="event_count",
+                    kind="metric",
+                ),
+            ),
+        )
+        self.view_tables.append(view_table)
+        return view_table
+
+    async def preview_view_table_sql(
+        self,
+        source_sql: str,
+        row_limit: int,
+    ) -> AnalyticsRows:
+        return await self.execute_select(source_sql, row_limit)
+
 
 def build_client(
     repository: FakeAnalyticsQueryRepository | None = None,
 ) -> tuple[TestClient, FakeAnalyticsQueryRepository]:
     query_repository = repository or FakeAnalyticsQueryRepository()
     container = Container()
+    catalog_service = AnalyticsCatalogService()
+    container.event_analytics.analytics_catalog_service.override(catalog_service)
     container.event_analytics.sql_query_service.override(
         SqlQueryService(
             policy=AnalyticsSqlPolicy(),
             repository=query_repository,
+            catalog_service=catalog_service,
         )
     )
     container.event_analytics.explore_query_service.override(
-        ExploreQueryService(repository=query_repository)
+        ExploreQueryService(
+            repository=query_repository,
+            catalog_service=catalog_service,
+        )
+    )
+    container.event_analytics.view_table_service.override(
+        ViewTableService(
+            repository=query_repository,
+            catalog_service=catalog_service,
+            policy=AnalyticsSqlPolicy(),
+        )
     )
     container.wire(modules=[analytics_router])
     app = FastAPI()
@@ -89,6 +167,7 @@ def test_datasets_endpoint_returns_views_only() -> None:
         {"name": "event_type", "label": "Event type", "kind": "dimension"},
         {"name": "event_count", "label": "Event count", "kind": "metric"},
     ]
+    assert event_type_dataset["origin"] == "builtin"
 
 
 def test_connection_endpoints_are_not_registered() -> None:
@@ -179,8 +258,21 @@ def test_explore_query_endpoint_executes_structured_dataset_query() -> None:
     assert repository.executed_explore_queries == [
         ExploreQuery(
             dataset_name="event_type_counts",
-            column_names=("event_type", "event_count"),
-            order_by="event_count",
+            column_refs=(
+                ExploreColumnRef(
+                    dataset_name="event_type_counts",
+                    column_name="event_type",
+                ),
+                ExploreColumnRef(
+                    dataset_name="event_type_counts",
+                    column_name="event_count",
+                ),
+            ),
+            joins=(),
+            order_by=ExploreColumnRef(
+                dataset_name="event_type_counts",
+                column_name="event_count",
+            ),
             order_direction="desc",
             row_limit=20,
         )
@@ -227,6 +319,91 @@ def test_explore_query_endpoint_rejects_unknown_column() -> None:
         "message": "dataset에 없는 column은 조회할 수 없습니다.",
         "rejected_reason": "unknown_column",
     }
+
+
+def test_explore_query_endpoint_accepts_join_request() -> None:
+    client, repository = build_client()
+
+    response = client.post(
+        "/analytics/explore-query",
+        json={
+            "dataset": "product_event_counts",
+            "columns": [
+                {"dataset": "product_event_counts", "column": "product_id"},
+                {"dataset": "commerce_funnel_counts", "column": "funnel_step"},
+                {"dataset": "product_event_counts", "column": "event_count"},
+            ],
+            "joins": [
+                {
+                    "dataset": "commerce_funnel_counts",
+                    "left_column": "event_type",
+                    "right_column": "event_type",
+                    "join_type": "inner",
+                }
+            ],
+            "order_by": {
+                "dataset": "product_event_counts",
+                "column": "event_count",
+            },
+            "order_direction": "desc",
+            "row_limit": 20,
+        },
+    )
+
+    assert response.status_code == 200
+    assert repository.executed_explore_queries[0].joins[0].dataset_name == (
+        "commerce_funnel_counts"
+    )
+
+
+def test_view_table_preview_endpoint_allows_events_source_select() -> None:
+    client, repository = build_client()
+
+    response = client.post(
+        "/analytics/view-tables/preview",
+        json={
+            "source_sql": (
+                "SELECT user_id, COUNT(*) AS event_count FROM events GROUP BY user_id"
+            ),
+            "row_limit": 20,
+        },
+    )
+
+    assert response.status_code == 200
+    assert repository.executed_sql == [
+        "SELECT user_id, COUNT(*) AS event_count FROM events GROUP BY user_id"
+    ]
+    assert repository.executed_row_limits == [20]
+
+
+def test_view_table_create_endpoint_saves_dataset() -> None:
+    client, repository = build_client()
+
+    response = client.post(
+        "/analytics/view-tables",
+        json={
+            "name": "user_event_type_counts",
+            "description": "유저별 이벤트 타입 발생 수",
+            "source_sql": (
+                "SELECT user_id, event_type, COUNT(*) AS event_count "
+                "FROM events GROUP BY user_id, event_type"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert repository.created_view_tables == [
+        (
+            "user_event_type_counts",
+            "유저별 이벤트 타입 발생 수",
+            (
+                "SELECT user_id, event_type, COUNT(*) AS event_count "
+                "FROM events GROUP BY user_id, event_type"
+            ),
+        )
+    ]
+    assert response.json()["name"] == "user_event_type_counts"
+    assert response.json()["origin"] == "view_table"
 
 
 def test_query_endpoint_returns_400_for_mutation_sql() -> None:

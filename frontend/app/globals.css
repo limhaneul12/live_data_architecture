@@ -693,6 +693,13 @@ td {
   gap: 14px;
 }
 
+.view-table-grid {
+  display: grid;
+  align-items: start;
+  grid-template-columns: minmax(0, 1.1fr) 340px;
+  gap: 14px;
+}
+
 .sql-editor {
   height: clamp(180px, 24vh, 260px);
   min-height: 160px;
@@ -703,6 +710,53 @@ td {
   color: #d6f3ff;
   font-size: 0.92rem;
   line-height: 1.65;
+}
+
+.view-table-source-editor {
+  height: clamp(240px, 32vh, 380px);
+}
+
+.join-builder {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.join-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--navy);
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.join-toggle span,
+.join-toggle small {
+  display: block;
+}
+
+.join-toggle small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.join-controls {
+  margin-top: 8px;
+}
+
+.control-row.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .metadata-list {
@@ -792,6 +846,7 @@ td {
 @media (max-width: 1180px) {
   .explore-grid,
   .sql-lab-grid,
+  .view-table-grid,
   .result-grid,
   .sql-lab-results {
     grid-template-columns: 1fr;
@@ -812,6 +867,10 @@ td {
   }
 
   .control-row {
+    grid-template-columns: 1fr;
+  }
+
+  .control-row.compact {
     grid-template-columns: 1fr;
   }
 }

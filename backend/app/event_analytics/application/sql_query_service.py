@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import logging
 
+from app.event_analytics.application.analytics_catalog_service import (
+    AnalyticsCatalogService,
+)
 from app.event_analytics.application.chart_suggestion import suggest_chart
 from app.event_analytics.application.query_policy import (
     AnalyticsSqlPolicy,
@@ -31,18 +34,21 @@ class SqlQueryService:
         *,
         policy: AnalyticsSqlPolicy,
         repository: AnalyticsQueryRepository,
+        catalog_service: AnalyticsCatalogService | None = None,
     ) -> None:
         """Initialize the SQL query service.
 
         Args:
             policy: Server-side SQL policy validator.
             repository: Read repository for validated analytics SQL.
+            catalog_service: Optional dynamic dataset catalog service.
 
         Returns:
             None.
         """
         self._policy = policy
         self._repository = repository
+        self._catalog_service = catalog_service
 
     async def execute(self, sql: str, row_limit: int) -> AnalyticsQueryResult:
         """Execute one manual or preset analytics SQL query.
@@ -56,7 +62,12 @@ class SqlQueryService:
         """
         sql_hash = analytics_sql_hash(sql)
         try:
-            validated = self._policy.validate(sql=sql, requested_row_limit=row_limit)
+            allowed_relations = await self._allowed_relations()
+            validated = self._policy.validate(
+                sql=sql,
+                requested_row_limit=row_limit,
+                allowed_relations=allowed_relations,
+            )
         except SqlPolicyViolationError as exc:
             log_sql_policy_rejection(
                 sql_hash=sql_hash,
@@ -81,6 +92,19 @@ class SqlQueryService:
             rows=rows.rows,
             chart=suggest_chart(rows),
         )
+
+    async def _allowed_relations(self) -> frozenset[str] | None:
+        """Return dynamic SQL Lab relation allowlist when available.
+
+        Args:
+            None.
+
+        Returns:
+            Dynamic dataset names or None to use the policy default.
+        """
+        if self._catalog_service is None:
+            return None
+        return await self._catalog_service.allowed_dataset_names()
 
 
 def analytics_sql_hash(sql: str) -> str:

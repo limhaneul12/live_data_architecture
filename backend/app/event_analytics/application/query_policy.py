@@ -90,12 +90,18 @@ class AnalyticsSqlPolicy:
         self._allowed_relations = allowed_relations
         self._max_row_limit = max_row_limit
 
-    def validate(self, sql: str, requested_row_limit: int) -> ValidatedSqlQuery:
+    def validate(
+        self,
+        sql: str,
+        requested_row_limit: int,
+        allowed_relations: frozenset[str] | None = None,
+    ) -> ValidatedSqlQuery:
         """Validate SQL and return its normalized execution contract.
 
         Args:
             sql: Manual SQL submitted by a user or preset.
             requested_row_limit: User-requested maximum row count.
+            allowed_relations: Optional request-specific relation allowlist.
 
         Returns:
             Validated query with capped row limit and referenced relation set.
@@ -108,7 +114,7 @@ class AnalyticsSqlPolicy:
         referenced_relations = _extract_referenced_relations(expression)
         _ensure_relations_are_allowlisted(
             referenced_relations=referenced_relations,
-            allowed_relations=self._allowed_relations,
+            allowed_relations=allowed_relations or self._allowed_relations,
         )
         return ValidatedSqlQuery(
             sql=expression.sql(dialect="postgres"),
