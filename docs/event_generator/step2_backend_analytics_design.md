@@ -159,6 +159,28 @@ SELECT * FROM events;
   SQLAlchemy Core `select()`로 SQL을 생성한다. SQL Lab의 manual SQL 경로는 고급 확인용으로
   남겨두되, 기본 chart 생성은 structured endpoint를 우선 사용한다.
 
+### 5.2 다른 DB 지원 가능성
+
+현재 구현은 PostgreSQL을 1차 지원 대상으로 고정한다. 다만 구조적으로는 두 층에서 확장 가능성이 있다.
+
+- Chart Builder: raw SQL이 아니라 `dataset`, `columns`, `order_by`, `row_limit` 같은 structured contract를 받으므로 DB별 repository adapter로 옮기기 쉽다.
+- SQL Lab: `sqlglot` AST validation을 사용하므로 dialect parameter를 바꿀 수는 있지만, DB별 function/catalog/identifier/timeout/read-only 정책을 다시 검증해야 한다.
+
+따라서 multi DB는 “DB URL만 바꾸는 기능”이 아니라 아래 adapter 책임을 분리해야 가능한 기능이다.
+
+```text
+AnalyticsDatabaseDialect
+  - sqlglot read dialect
+  - SQLAlchemy driver URL policy
+  - generated relation allowlist
+  - runtime read-only guard SQL
+  - statement/lock timeout strategy
+  - health check SQL
+  - value serialization policy
+```
+
+과제 v1에서는 이 추상화를 코드에 넣지 않는다. 실제 지원 DB가 PostgreSQL 하나뿐인 상태에서 adapter 계층을 먼저 만들면 범위가 과해지고, 검증 matrix도 불필요하게 커진다. 대신 확장 검토는 `docs/event_generator/database_support_extension.md`에 별도 문서로 남긴다.
+
 ## 6. Backend API
 
 ```text
