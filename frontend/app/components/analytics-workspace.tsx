@@ -9,6 +9,7 @@ import {
   type QueryResult,
   type ViewTable,
   createViewTable,
+  deleteViewTable,
   fetchDatasets,
   fetchViewTables,
   previewViewTable,
@@ -60,6 +61,9 @@ export function AnalyticsWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [queryStatus, setQueryStatus] = useState<QueryStatus>("idle");
   const [bootLoading, setBootLoading] = useState(true);
+  const [deletingViewTableName, setDeletingViewTableName] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     let mounted = true;
@@ -139,6 +143,23 @@ export function AnalyticsWorkspace() {
         joinDataset: activeJoin?.dataset,
       }),
     [activeJoin?.dataset, selectedDataset],
+  );
+  const joinTargetOptions = useMemo(
+    () => datasets.filter((dataset) => dataset.name !== selectedDatasetName),
+    [datasets, selectedDatasetName],
+  );
+  const canJoin = selectedDataset !== undefined && joinTargetOptions.length > 0;
+  const joinKeyHint = useMemo(
+    () =>
+      selectedDataset === undefined || selectedJoinDataset === undefined
+        ? null
+        : joinKeyDescription({
+            dataset: selectedDataset,
+            joinDataset: selectedJoinDataset,
+            leftColumn: joinLeftColumn,
+            rightColumn: joinRightColumn,
+          }),
+    [joinLeftColumn, joinRightColumn, selectedDataset, selectedJoinDataset],
   );
 
   const generatedSql = useMemo(() => {
@@ -251,14 +272,34 @@ export function AnalyticsWorkspace() {
     });
   }
 
+  function resetJoinControls(dataset: Dataset | undefined) {
+    setJoinEnabled(false);
+    setJoinDatasetName("");
+    setJoinLeftColumn("");
+    setJoinRightColumn("");
+    if (dataset === undefined) {
+      setSelectedColumns([]);
+      setOrderBy("");
+      return;
+    }
+    setSelectedColumns(defaultColumnsFor(dataset));
+    setOrderBy(defaultOrderFor(dataset));
+  }
+
   function enableDefaultJoin() {
     if (selectedDataset === undefined) {
       return;
     }
-    const defaultJoinDataset = datasets.find(
-      (dataset) => dataset.name !== selectedDataset.name,
-    );
+    const defaultJoinDataset = joinTargetOptions[0];
     if (defaultJoinDataset === undefined) {
+      setError("JOIN을 구성하려면 기준 table 외에 다른 dataset이 필요합니다.");
+      return;
+    }
+    applyJoinTarget(defaultJoinDataset);
+  }
+
+  function applyJoinTarget(defaultJoinDataset: Dataset) {
+    if (selectedDataset === undefined) {
       return;
     }
     const [leftColumn, rightColumn] = defaultJoinColumns(
@@ -273,6 +314,18 @@ export function AnalyticsWorkspace() {
     setOrderBy(qualifiedColumnName(selectedDataset.name, defaultOrderFor(selectedDataset)));
   }
 
+  function applyRecommendedJoinKeys() {
+    if (selectedDataset === undefined || selectedJoinDataset === undefined) {
+      return;
+    }
+    const [leftColumn, rightColumn] = defaultJoinColumns(
+      selectedDataset,
+      selectedJoinDataset,
+    );
+    setJoinLeftColumn(leftColumn);
+    setJoinRightColumn(rightColumn);
+  }
+
   async function reloadMetadata(preferredDatasetName: string | null) {
     const [loadedDatasets, loadedViewTables] = await Promise.all([
       fetchDatasets(),
@@ -283,8 +336,25 @@ export function AnalyticsWorkspace() {
     const preferred = loadedDatasets.find(
       (dataset) => dataset.name === preferredDatasetName,
     );
+    const currentDataset = loadedDatasets.find(
+      (dataset) => dataset.name === selectedDatasetName,
+    );
+    const activeDataset =
+      preferred ?? currentDataset ?? preferredDataset(loadedDatasets);
     if (preferred !== undefined) {
       applyDatasetDefaults(preferred);
+    } else if (selectedDatasetName.length > 0 && currentDataset === undefined) {
+      if (activeDataset !== undefined) {
+        applyDatasetDefaults(activeDataset);
+      } else {
+        resetJoinControls(undefined);
+      }
+    }
+    if (
+      joinDatasetName.length > 0 &&
+      loadedDatasets.every((dataset) => dataset.name !== joinDatasetName)
+    ) {
+      resetJoinControls(activeDataset);
     }
   }
 
@@ -326,6 +396,35 @@ export function AnalyticsWorkspace() {
           : "View table 저장에 실패했습니다.",
       );
       setQueryStatus("error");
+    }
+  }
+
+  async function deleteSavedViewTable(viewTable: ViewTable) {
+    const confirmed = window.confirm(
+      `${viewTable.name} view table을 삭제할까요? 저장된 dataset 목록에서도 제거됩니다.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDeletingViewTableName(viewTable.name);
+    setQueryStatus("loading");
+    setError(null);
+    try {
+      await deleteViewTable(viewTable.name);
+      await reloadMetadata(
+        selectedDatasetName === viewTable.name ? null : selectedDatasetName,
+      );
+      setResult(null);
+      setQueryStatus("success");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "View table 삭제에 실패했습니다.",
+      );
+      setQueryStatus("error");
+    } finally {
+      setDeletingViewTableName(null);
     }
   }
 
@@ -409,32 +508,30 @@ export function AnalyticsWorkspace() {
                     <input
                       type="checkbox"
                       checked={joinEnabled}
+                      disabled={!canJoin}
                       onChange={(event) => {
                         if (event.target.checked) {
                           enableDefaultJoin();
                         } else {
-                          setJoinEnabled(false);
-                          setJoinDatasetName("");
-                          setJoinLeftColumn("");
-                          setJoinRightColumn("");
-                          setSelectedColumns(
-                            selectedDataset === undefined
-                              ? []
-                              : defaultColumnsFor(selectedDataset),
-                          );
-                          setOrderBy(
-                            selectedDataset === undefined
-                              ? ""
-                              : defaultOrderFor(selectedDataset),
-                          );
+                          resetJoinControls(selectedDataset);
                         }
                       }}
                     />
                     <span>
                       <strong>Join table</strong>
-                      <small>base dataset 기준 1개 JOIN</small>
+                      <small>
+                        {canJoin
+                          ? `${joinTargetOptions.length}개 target 중 1-hop JOIN`
+                          : "JOIN에는 기준 table 외 dataset이 필요합니다."}
+                      </small>
                     </span>
                   </label>
+                  {!canJoin ? (
+                    <p className="join-empty-note">
+                      View Tables에서 dataset을 저장하거나 다른 generated table을
+                      선택하면 JOIN builder를 사용할 수 있습니다.
+                    </p>
+                  ) : null}
 
                   {joinEnabled ? (
                     <div className="join-controls">
@@ -450,32 +547,16 @@ export function AnalyticsWorkspace() {
                             (dataset) => dataset.name === event.target.value,
                           );
                           setJoinDatasetName(event.target.value);
-                          if (
-                            selectedDataset !== undefined &&
-                            nextJoinDataset !== undefined
-                          ) {
-                            const [leftColumn, rightColumn] = defaultJoinColumns(
-                              selectedDataset,
-                              nextJoinDataset,
-                            );
-                            setJoinLeftColumn(leftColumn);
-                            setJoinRightColumn(rightColumn);
-                            setSelectedColumns(
-                              defaultColumnsForJoinedDatasets(
-                                selectedDataset,
-                                nextJoinDataset,
-                              ),
-                            );
+                          if (nextJoinDataset !== undefined) {
+                            applyJoinTarget(nextJoinDataset);
                           }
                         }}
                       >
-                        {datasets
-                          .filter((dataset) => dataset.name !== selectedDatasetName)
-                          .map((dataset) => (
-                            <option key={dataset.name} value={dataset.name}>
-                              {dataset.name}
-                            </option>
-                          ))}
+                        {joinTargetOptions.map((dataset) => (
+                          <option key={dataset.name} value={dataset.name}>
+                            {dataset.name}
+                          </option>
+                        ))}
                       </select>
 
                       <div className="control-row compact">
@@ -529,6 +610,16 @@ export function AnalyticsWorkspace() {
                             ))}
                           </select>
                         </div>
+                      </div>
+                      <div className="join-summary">
+                        <span>{joinKeyHint}</span>
+                        <button
+                          className="inline-link-button"
+                          type="button"
+                          onClick={applyRecommendedJoinKeys}
+                        >
+                          Use recommended keys
+                        </button>
                       </div>
                     </div>
                   ) : null}
@@ -826,6 +917,10 @@ export function AnalyticsWorkspace() {
                       <article key={viewTable.name} className="metadata-card">
                         <strong>{viewTable.name}</strong>
                         <p>{viewTable.description || "No description"}</p>
+                        <details className="view-table-source">
+                          <summary>Source SQL</summary>
+                          <pre>{viewTable.source_sql}</pre>
+                        </details>
                         <div className="metadata-columns">
                           {viewTable.columns.map((column) => (
                             <span key={column.name}>
@@ -834,21 +929,36 @@ export function AnalyticsWorkspace() {
                             </span>
                           ))}
                         </div>
-                        <button
-                          className="metadata-query-button"
-                          type="button"
-                          onClick={() => {
-                            const dataset = datasets.find(
-                              (item) => item.name === viewTable.name,
-                            );
-                            if (dataset !== undefined) {
-                              applyDatasetDefaults(dataset);
-                              setMode("explore");
+                        <div className="metadata-actions">
+                          <button
+                            className="metadata-query-button"
+                            type="button"
+                            onClick={() => {
+                              const dataset = datasets.find(
+                                (item) => item.name === viewTable.name,
+                              );
+                              if (dataset !== undefined) {
+                                applyDatasetDefaults(dataset);
+                                setMode("explore");
+                              }
+                            }}
+                          >
+                            Open in Charts
+                          </button>
+                          <button
+                            className="metadata-query-button danger"
+                            type="button"
+                            disabled={
+                              deletingViewTableName !== null ||
+                              queryStatus === "loading"
                             }
-                          }}
-                        >
-                          Open in Charts
-                        </button>
+                            onClick={() => void deleteSavedViewTable(viewTable)}
+                          >
+                            {deletingViewTableName === viewTable.name
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
+                        </div>
                       </article>
                     ))
                   )}
@@ -1096,6 +1206,41 @@ function defaultJoinColumns(
     dataset.columns[0]?.name ?? "",
     joinDataset.columns[0]?.name ?? "",
   ];
+}
+
+function joinKeyDescription({
+  dataset,
+  joinDataset,
+  leftColumn,
+  rightColumn,
+}: {
+  dataset: Dataset;
+  joinDataset: Dataset;
+  leftColumn: string;
+  rightColumn: string;
+}): string {
+  const [recommendedLeft, recommendedRight] = defaultJoinColumns(
+    dataset,
+    joinDataset,
+  );
+  const recommended =
+    recommendedLeft === leftColumn && recommendedRight === rightColumn
+      ? "recommended"
+      : "custom";
+  const sharedColumnNames = new Set(
+    joinDataset.columns.map((column) => column.name),
+  );
+  const hasSharedColumn = dataset.columns.some((column) =>
+    sharedColumnNames.has(column.name),
+  );
+  const sharedHint = hasSharedColumn
+    ? "shared column detected"
+    : "no shared column detected";
+  return [
+    `${dataset.name}.${leftColumn} → ${joinDataset.name}.${rightColumn}`,
+    recommended,
+    sharedHint,
+  ].join(" · ");
 }
 
 function queryStatusLabel(status: QueryStatus): string {

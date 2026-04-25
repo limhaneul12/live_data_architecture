@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 const BACKEND_API_BASE_URL = (process.env.BACKEND_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const MAX_ANALYTICS_PROXY_BODY_BYTES = 16_384;
 
-type AnalyticsProxyMethod = "GET" | "POST";
+type AnalyticsProxyMethod = "DELETE" | "GET" | "POST";
 type AnalyticsProxyRoute = {
   backendPath: string;
   methods: readonly AnalyticsProxyMethod[];
@@ -57,16 +57,41 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   });
 }
 
+export async function DELETE(_request: NextRequest, context: RouteContext): Promise<Response> {
+  const route = await analyticsRoute(context);
+  if (route === null) {
+    return unknownRouteResponse();
+  }
+  if (!route.methods.includes("DELETE")) {
+    return methodNotAllowedResponse(route.methods);
+  }
+  return proxyRequest(analyticsUrl(route.backendPath), { method: "DELETE" });
+}
+
 async function analyticsRoute(context: RouteContext): Promise<AnalyticsProxyRoute | null> {
   const { path } = await context.params;
   if (path.length === 0) {
     return null;
+  }
+  const viewTableItemRoute = analyticsViewTableItemRoute(path);
+  if (viewTableItemRoute !== null) {
+    return viewTableItemRoute;
   }
   const routeName = path.join("/");
   if (!isAnalyticsProxyRouteName(routeName)) {
     return null;
   }
   return ANALYTICS_PROXY_ROUTES[routeName];
+}
+
+function analyticsViewTableItemRoute(path: string[]): AnalyticsProxyRoute | null {
+  if (path.length !== 2 || path[0] !== "view-tables") {
+    return null;
+  }
+  return {
+    backendPath: `view-tables/${path[1]}`,
+    methods: ["DELETE"],
+  };
 }
 
 function analyticsUrl(backendPath: string): string {
@@ -94,7 +119,8 @@ async function proxyRequest(url: string, init: RequestInit): Promise<Response> {
       cache: "no-store",
     });
     const contentType = response.headers.get("content-type") ?? "application/json";
-    return new Response(await response.text(), {
+    const responseBody = response.status === 204 ? null : await response.text();
+    return new Response(responseBody, {
       status: response.status,
       headers: { "content-type": contentType },
     });

@@ -20,6 +20,8 @@ from app.event_analytics.infrastructure.repositories.postgres_analytics_query_re
     AnalyticsSelectStatement,
     PostgresAnalyticsQueryRepository,
     build_analytics_runtime_guard_sql,
+    build_delete_view_table_metadata_statement,
+    build_drop_view_table_sql,
     build_explore_select_statement,
     build_limited_select_sql,
     build_view_table_metadata_select_statement,
@@ -299,6 +301,46 @@ def test_build_view_table_metadata_select_statement_uses_sqlalchemy_core() -> No
         "ORDER BY analytics_view_tables.name, "
         "information_schema.columns.ordinal_position"
     )
+
+
+def test_build_drop_view_table_sql_uses_validated_name() -> None:
+    drop_sql = build_drop_view_table_sql("user_event_type_counts")
+
+    assert drop_sql == "DROP VIEW IF EXISTS user_event_type_counts"
+
+
+def test_build_delete_view_table_metadata_statement_removes_only_target_row() -> None:
+    statement = build_delete_view_table_metadata_statement("user_event_type_counts")
+
+    compiled = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert compiled == (
+        "DELETE FROM analytics_view_tables "
+        "WHERE analytics_view_tables.name = 'user_event_type_counts'"
+    )
+
+
+def test_postgres_query_repository_deletes_view_table_and_metadata() -> None:
+    session_factory = FakeSessionFactory()
+    repository = PostgresAnalyticsQueryRepository(
+        cast(async_sessionmaker[AsyncSession], session_factory),
+    )
+
+    asyncio.run(repository.delete_view_table("user_event_type_counts"))
+
+    assert session_factory.session.executed == [
+        ("DROP VIEW IF EXISTS user_event_type_counts", None),
+        (
+            "DELETE FROM analytics_view_tables "
+            "WHERE analytics_view_tables.name = :name_1",
+            None,
+        ),
+    ]
 
 
 def test_postgres_query_repository_converts_db_values_to_json_safe_values() -> None:

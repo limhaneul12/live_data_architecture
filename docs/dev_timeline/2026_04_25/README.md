@@ -10,8 +10,12 @@
 - `03_frontend_visualization/`: Superset-style 화면, Chart Builder, SQL Lab UX, chart/table 렌더링
 - `04_sql_security/`: SQL Lab raw SQL guardrail, read-only role, proxy 보안, 보안 리뷰 후속 조치
 - `05_database_scope/`: 다중 DB 확장 검토, connection UI 검토 이력, Connections 기능 삭제 결정
+- `06_view_tables_chart_join/`: 사용자 생성 view table, Chart Builder 1-hop JOIN, E2E/browser QA 기록
+- `07_submission_docs/`: 제출용 README 섹션, screenshot placeholder, 검증 checklist 정리
 
 ## Current scope decision
 
-최신 결정은 `05_database_scope/19_remove_connections_feature.md`다. 현재 v1 범위는
-DB connection 관리 플랫폼이 아니라 Chart Builder + SQL Lab + generated table allowlist 중심이다.
+최신 제출 범위는 DB connection 관리 플랫폼이 아니라 Chart Builder + SQL Lab + View Tables 중심이다.
+사용자는 `View Tables`에서 검증된 SELECT를 저장하고, `Charts`에서 generated/saved dataset과
+최대 1개 JOIN을 사용해 table/chart를 확인한다. 제출 문서 관점의 최신 정리는
+`07_submission_docs/23_readme_submission_pack.md`에 기록한다.

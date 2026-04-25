@@ -55,6 +55,17 @@ class AnalyticsDatasetRepository(ABC):
         """
 
     @abstractmethod
+    async def delete_view_table(self, name: str) -> None:
+        """Delete one user-created analytics view table.
+
+        Args:
+            name: Validated view table name.
+
+        Returns:
+            None.
+        """
+
+    @abstractmethod
     async def preview_view_table_sql(
         self,
         source_sql: str,
