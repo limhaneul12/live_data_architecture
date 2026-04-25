@@ -26,7 +26,7 @@ const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string }> = [
   { value: "table", label: "Table" },
 ];
 
-type WorkspaceMode = "explore" | "sql-lab";
+type WorkspaceMode = "explore" | "sql-lab" | "connections";
 type QueryStatus = "idle" | "loading" | "success" | "error";
 
 export function AnalyticsWorkspace() {
@@ -181,49 +181,65 @@ export function AnalyticsWorkspace() {
     <main className="superset-shell">
       <header className="superset-topbar">
         <div className="brand-mark">LDA</div>
-        <div className="top-nav">
+        <nav className="top-nav" aria-label="Analytics workspace navigation">
           <strong>Event Analytics</strong>
-        </div>
-        <div className={`connection-pill ${metadataLoaded ? "ok" : "error"}`}>
+          <button
+            className={topNavClass(mode, "explore")}
+            type="button"
+            onClick={() => setMode("explore")}
+          >
+            Charts
+          </button>
+          <button
+            className={topNavClass(mode, "sql-lab")}
+            type="button"
+            onClick={() => setMode("sql-lab")}
+          >
+            SQL Lab
+          </button>
+          <button
+            className={topNavClass(mode, "connections")}
+            type="button"
+            onClick={() => setMode("connections")}
+          >
+            Connections
+          </button>
+        </nav>
+        <button
+          className={`connection-pill ${metadataLoaded ? "ok" : "error"}`}
+          type="button"
+          onClick={() => setMode("connections")}
+        >
           <span />
           {statusLabel}
-        </div>
+        </button>
       </header>
 
       <div className="superset-layout">
         <section className="superset-main">
           <div className="page-toolbar">
             <div>
-              <p className="breadcrumb">Event analytics</p>
-              <h2>{mode === "explore" ? "Chart builder" : "SQL Lab"}</h2>
-            </div>
-            <div className="toolbar-actions">
-              <button
-                className={mode === "explore" ? "tab-button active" : "tab-button"}
-                type="button"
-                onClick={() => setMode("explore")}
-              >
-                Chart Builder
-              </button>
-              <button
-                className={mode === "sql-lab" ? "tab-button active" : "tab-button"}
-                type="button"
-                onClick={() => setMode("sql-lab")}
-              >
-                SQL Lab
-              </button>
+              <p className="breadcrumb">{workspaceBreadcrumb(mode)}</p>
+              <h2>{workspaceTitle(mode)}</h2>
             </div>
           </div>
 
-          {mode === "explore" ? (
+          {mode === "connections" ? (
+            <ConnectionsWorkspace
+              connection={connection}
+              datasets={datasets}
+              onOpenDataset={(dataset) => {
+                setSqlLabSql(exampleSqlForDataset(dataset));
+                setMode("sql-lab");
+              }}
+            />
+          ) : mode === "explore" ? (
             <section className="explore-grid">
               <aside className="control-panel">
                 <div className="control-header">
                   <h2>Chart controls</h2>
                   <span>{datasets.length} tables</span>
                 </div>
-
-                <DatabaseConnectionPanel connection={connection} />
 
                 <label className="control-label" htmlFor="dataset-select">
                   Table
@@ -470,6 +486,89 @@ export function AnalyticsWorkspace() {
   );
 }
 
+function ConnectionsWorkspace({
+  connection,
+  datasets,
+  onOpenDataset,
+}: {
+  connection: AnalyticsConnection | null;
+  datasets: Dataset[];
+  onOpenDataset: (dataset: Dataset) => void;
+}) {
+  const databaseName = databaseDisplayName(connection?.database ?? "postgresql");
+  const connectedTableCount = datasets.length;
+
+  return (
+    <section className="connections-grid">
+      <section className="connection-overview-panel">
+        <div className="panel-header horizontal">
+          <div>
+            <p className="breadcrumb">Connections</p>
+            <h2>Connected database</h2>
+            <p>
+              Superset의 database connection 화면처럼 현재 SQL Lab과 Chart Builder가
+              바라보는 DB를 별도 화면에서 확인합니다.
+            </p>
+          </div>
+        </div>
+
+        <div className="database-choice-grid" aria-label="Supported databases">
+          <article className="database-choice-card active">
+            <div className="database-icon" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <strong>{databaseName}</strong>
+            <small>{connectionStatusText(connection)}</small>
+          </article>
+        </div>
+
+        <DatabaseConnectionPanel connection={connection} />
+      </section>
+
+      <section className="connected-tables-panel">
+        <div className="panel-header horizontal">
+          <div>
+            <p className="breadcrumb">Generated tables</p>
+            <h2>{connectedTableCount} connected tables</h2>
+            <p>
+              SQL Lab에서 직접 조회 가능한 generated table 목록입니다. raw events
+              table은 보안상 노출하지 않습니다.
+            </p>
+          </div>
+        </div>
+
+        <div className="connection-table-list">
+          {datasets.map((dataset) => (
+            <article key={dataset.name} className="connection-table-card">
+              <div>
+                <strong>{dataset.name}</strong>
+                <p>{dataset.description}</p>
+                <div className="metadata-columns">
+                  {dataset.columns.map((column) => (
+                    <span key={column.name}>
+                      {column.name}
+                      <small>{column.kind}</small>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                className="metadata-query-button"
+                type="button"
+                onClick={() => onOpenDataset(dataset)}
+              >
+                Open in SQL Lab
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 function DatabaseConnectionPanel({
   connection,
 }: {
@@ -519,6 +618,44 @@ function DatabaseConnectionPanel({
       <p>{connection?.message ?? "analytics DB 연결 정보를 불러오는 중입니다."}</p>
     </section>
   );
+}
+
+function topNavClass(currentMode: WorkspaceMode, targetMode: WorkspaceMode): string {
+  return currentMode === targetMode ? "top-nav-link active" : "top-nav-link";
+}
+
+function workspaceBreadcrumb(mode: WorkspaceMode): string {
+  if (mode === "connections") {
+    return "Data";
+  }
+  return "Event analytics";
+}
+
+function workspaceTitle(mode: WorkspaceMode): string {
+  if (mode === "connections") {
+    return "Connections";
+  }
+  if (mode === "explore") {
+    return "Chart builder";
+  }
+  return "SQL Lab";
+}
+
+function databaseDisplayName(database: AnalyticsConnection["database"]): string {
+  if (database === "postgresql") {
+    return "PostgreSQL";
+  }
+  return database;
+}
+
+function connectionStatusText(connection: AnalyticsConnection | null): string {
+  if (connection === null) {
+    return "Loading metadata";
+  }
+  if (connection.source === "analytics_read_only_dsn") {
+    return "Connected with read-only DSN";
+  }
+  return "Connected with writer fallback";
 }
 
 function preferredDataset(datasets: Dataset[]): Dataset | undefined {
