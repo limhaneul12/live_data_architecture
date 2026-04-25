@@ -15,6 +15,11 @@ producer는 MQ로 흘려보낼 이벤트 계약을 책임지고, storage는 SQL 
 
 MQ로 보내는 이벤트는 `web_event.v1` payload로 고정했다.
 
+이 payload는 이벤트 타입마다 전혀 다른 JSON shape를 갖는 방식이 아니라, **모든 이벤트가
+같은 top-level field set을 공유하는 계약**으로 설계했다. 구현상으로도 generator의
+`EVENT_FIELD_NAMES`, `GeneratedEvent.to_json_dict()`, backend의 `WebEventPayload`가 모두
+같은 필드 집합을 전제로 동작한다.
+
 공통 필드:
 
 - `schema_version`
@@ -37,6 +42,15 @@ MQ로 보내는 이벤트는 `web_event.v1` payload로 고정했다.
 
 의도는 “이벤트 타입이 달라도 top-level contract는 같게 유지한다”였다.
 이렇게 해야 consumer 입장에서 타입마다 전혀 다른 payload parser를 만들지 않아도 된다.
+
+여기서 중요한 점은 **상세 필드가 없어지는 것이 아니라, 값이 `null`이 될 수 있다는 것**이다.
+즉:
+
+- `purchase`가 아니면 `amount`, `currency`는 대개 `null`
+- `checkout_error`가 아니면 `error_code`, `error_message`는 대개 `null`
+- `page_view`가 아니면 `page_path`는 `null`일 수 있음
+
+하지만 payload 차원에서는 필드 이름 자체를 생략하지 않고 같은 계약을 유지한다.
 
 ## PostgreSQL storage schema
 
@@ -80,11 +94,22 @@ column을 두는 방식을 택했다.
 
 ## 고민했던 부분
 
-### event_id를 완전 random으로 할지
+### event_id를 어떤 성격의 식별자로 볼지
 
 중복 허용 ID는 분석/적재 안정성에 불리하다.
 그래서 `event_id`는 opaque unique identifier로 보고, 반복 가능한 것은 `product_id`,
 `category_id`, `event_type` 같은 분석 축으로 남겼다.
+
+다만 구현 기준으로 엄밀하게 말하면 `event_id`는 “완전한 임의 random 문자열”은 아니다.
+현재 generator는 seed 기반 RNG와 내부 sequence를 조합해 `evt_<24 hex>` 형태의
+**opaque + unique + deterministic** 식별자를 만든다.
+
+즉, 문서적으로는 다음처럼 이해하는 것이 정확하다.
+
+- `event_id`: 적재 중복 방지와 이벤트 단건 식별을 위한 고유 ID
+- `product_id`, `category_id`: 여러 이벤트에서 반복될 수 있는 분석 축
+
+이 구분이 있어야 DB에서 `event_id` primary key와 `ON CONFLICT DO NOTHING` 전략이 성립한다.
 
 ### raw events를 SQL Lab에 직접 열어둘지
 
