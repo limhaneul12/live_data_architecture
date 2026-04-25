@@ -6,7 +6,11 @@ from decimal import Decimal
 from types import TracebackType
 from typing import cast
 
-from app.event_analytics.domain.explore_query import ExploreQuery
+from app.event_analytics.domain.explore_query import (
+    ExploreColumnRef,
+    ExploreJoin,
+    ExploreQuery,
+)
 from app.event_analytics.domain.query_result import AnalyticsRows
 from app.event_analytics.infrastructure.repositories.postgres_analytics_query_repository import (
     ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT_MS,
@@ -18,6 +22,7 @@ from app.event_analytics.infrastructure.repositories.postgres_analytics_query_re
     build_analytics_runtime_guard_sql,
     build_explore_select_statement,
     build_limited_select_sql,
+    build_view_table_metadata_select_statement,
     json_safe_value,
 )
 from sqlalchemy.dialects import postgresql
@@ -149,8 +154,21 @@ def test_build_explore_select_statement_uses_sqlalchemy_core_allowlisted_shape()
     statement = build_explore_select_statement(
         ExploreQuery(
             dataset_name="event_type_counts",
-            column_names=("event_type", "event_count"),
-            order_by="event_count",
+            column_refs=(
+                ExploreColumnRef(
+                    dataset_name="event_type_counts",
+                    column_name="event_type",
+                ),
+                ExploreColumnRef(
+                    dataset_name="event_type_counts",
+                    column_name="event_count",
+                ),
+            ),
+            joins=(),
+            order_by=ExploreColumnRef(
+                dataset_name="event_type_counts",
+                column_name="event_count",
+            ),
             order_direction="desc",
             row_limit=20,
         )
@@ -180,7 +198,13 @@ def test_postgres_query_repository_executes_explore_query_with_runtime_guard() -
         repository.execute_explore_query(
             ExploreQuery(
                 dataset_name="event_type_counts",
-                column_names=("event_type",),
+                column_refs=(
+                    ExploreColumnRef(
+                        dataset_name="event_type_counts",
+                        column_name="event_type",
+                    ),
+                ),
+                joins=(),
                 order_by=None,
                 order_direction="asc",
                 row_limit=10,
@@ -195,6 +219,85 @@ def test_postgres_query_repository_executes_explore_query_with_runtime_guard() -
     assert session_factory.session.executed[-1] == (
         "SELECT event_type_counts.event_type \nFROM event_type_counts\n LIMIT :param_1",
         None,
+    )
+
+
+def test_build_explore_select_statement_builds_join_query() -> None:
+    statement = build_explore_select_statement(
+        ExploreQuery(
+            dataset_name="product_event_counts",
+            column_refs=(
+                ExploreColumnRef(
+                    dataset_name="product_event_counts",
+                    column_name="product_id",
+                ),
+                ExploreColumnRef(
+                    dataset_name="commerce_funnel_counts",
+                    column_name="funnel_step",
+                ),
+                ExploreColumnRef(
+                    dataset_name="product_event_counts",
+                    column_name="event_count",
+                ),
+            ),
+            joins=(
+                ExploreJoin(
+                    dataset_name="commerce_funnel_counts",
+                    left_column="event_type",
+                    right_column="event_type",
+                    join_type="inner",
+                ),
+            ),
+            order_by=ExploreColumnRef(
+                dataset_name="product_event_counts",
+                column_name="event_count",
+            ),
+            order_direction="desc",
+            row_limit=50,
+        )
+    )
+
+    compiled = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert compiled == (
+        "SELECT product_event_counts.product_id AS "
+        "product_event_counts_product_id, commerce_funnel_counts.funnel_step "
+        "AS commerce_funnel_counts_funnel_step, product_event_counts.event_count "
+        "AS product_event_counts_event_count \n"
+        "FROM product_event_counts JOIN commerce_funnel_counts ON "
+        "product_event_counts.event_type = commerce_funnel_counts.event_type "
+        "ORDER BY product_event_counts.event_count DESC \n LIMIT 50"
+    )
+
+
+def test_build_view_table_metadata_select_statement_uses_sqlalchemy_core() -> None:
+    statement = build_view_table_metadata_select_statement("user_event_type_counts")
+
+    compiled = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert compiled == (
+        "SELECT analytics_view_tables.name AS name, "
+        "analytics_view_tables.description AS description, "
+        "analytics_view_tables.source_sql AS source_sql, "
+        "information_schema.columns.column_name AS column_name, "
+        "information_schema.columns.data_type AS data_type, "
+        "information_schema.columns.ordinal_position AS ordinal_position \n"
+        "FROM analytics_view_tables LEFT OUTER JOIN information_schema.columns "
+        "ON information_schema.columns.table_schema = 'public' "
+        "AND analytics_view_tables.name = information_schema.columns.table_name \n"
+        "WHERE analytics_view_tables.name = 'user_event_type_counts' "
+        "ORDER BY analytics_view_tables.name, "
+        "information_schema.columns.ordinal_position"
     )
 
 

@@ -7,6 +7,8 @@ from app.shared.exceptions.event_analytics_exceptions import (
     EventAnalyticsRouteError,
     EventAnalyticsSqlExecutionUnavailableError,
     EventAnalyticsSqlPolicyViolationError,
+    EventAnalyticsViewTableExecutionUnavailableError,
+    EventAnalyticsViewTableValidationError,
 )
 from app.shared.exceptions.exception_decorators import map_event_analytics_route_errors
 
@@ -17,5 +19,7 @@ __all__ = [
     "EventAnalyticsRouteError",
     "EventAnalyticsSqlExecutionUnavailableError",
     "EventAnalyticsSqlPolicyViolationError",
+    "EventAnalyticsViewTableExecutionUnavailableError",
+    "EventAnalyticsViewTableValidationError",
     "map_event_analytics_route_errors",
 ]

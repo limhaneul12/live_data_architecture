@@ -7,8 +7,13 @@ from app.event_analytics.interface.schemas.analytics import (
     AnalyticsQueryRequest,
     AnalyticsQueryResponse,
     ChartSuggestionPayload,
+    ExploreColumnRefPayload,
+    ExploreJoinPayload,
     ExploreQueryRequest,
     PresetQueryPayload,
+    ViewTableCreateRequest,
+    ViewTablePayload,
+    ViewTablePreviewRequest,
 )
 from app.event_analytics.interface.schemas.events import WebEventPayload
 
@@ -19,7 +24,12 @@ __all__ = [
     "AnalyticsQueryRequest",
     "AnalyticsQueryResponse",
     "ChartSuggestionPayload",
+    "ExploreColumnRefPayload",
+    "ExploreJoinPayload",
     "ExploreQueryRequest",
     "PresetQueryPayload",
+    "ViewTableCreateRequest",
+    "ViewTablePayload",
+    "ViewTablePreviewRequest",
     "WebEventPayload",
 ]

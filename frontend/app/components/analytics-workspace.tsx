@@ -5,8 +5,13 @@ import {
   type ChartKind,
   type Dataset,
   type ExploreOrderDirection,
+  type ExploreJoinType,
   type QueryResult,
+  type ViewTable,
+  createViewTable,
   fetchDatasets,
+  fetchViewTables,
+  previewViewTable,
   runAnalyticsQuery,
   runExploreQuery,
 } from "../lib/api";
@@ -15,6 +20,8 @@ import { ResultTable } from "./result-table";
 
 const DEFAULT_SQL =
   "SELECT event_type, event_count\nFROM event_type_counts\nORDER BY event_count DESC\nLIMIT 100";
+const DEFAULT_VIEW_TABLE_SQL =
+  "SELECT\n  user_id,\n  event_type,\n  COUNT(*) AS event_count\nFROM events\nGROUP BY user_id, event_type";
 const ROW_LIMIT_OPTIONS = [20, 50, 100, 500] as const;
 const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string }> = [
   { value: "bar", label: "Bar chart" },
@@ -24,11 +31,12 @@ const CHART_KIND_OPTIONS: Array<{ value: ChartKind; label: string }> = [
   { value: "table", label: "Table" },
 ];
 
-type WorkspaceMode = "explore" | "sql-lab";
+type WorkspaceMode = "explore" | "sql-lab" | "view-tables";
 type QueryStatus = "idle" | "loading" | "success" | "error";
 
 export function AnalyticsWorkspace() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [viewTables, setViewTables] = useState<ViewTable[]>([]);
   const [mode, setMode] = useState<WorkspaceMode>("explore");
   const [selectedDatasetName, setSelectedDatasetName] = useState("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -37,7 +45,17 @@ export function AnalyticsWorkspace() {
   const [orderDirection, setOrderDirection] =
     useState<ExploreOrderDirection>("desc");
   const [rowLimit, setRowLimit] = useState<number>(100);
+  const [joinEnabled, setJoinEnabled] = useState(false);
+  const [joinDatasetName, setJoinDatasetName] = useState("");
+  const [joinType, setJoinType] = useState<ExploreJoinType>("inner");
+  const [joinLeftColumn, setJoinLeftColumn] = useState("");
+  const [joinRightColumn, setJoinRightColumn] = useState("");
   const [sqlLabSql, setSqlLabSql] = useState(DEFAULT_SQL);
+  const [viewTableName, setViewTableName] = useState("user_event_type_counts");
+  const [viewTableDescription, setViewTableDescription] = useState(
+    "유저별 이벤트 타입 발생 수",
+  );
+  const [viewTableSql, setViewTableSql] = useState(DEFAULT_VIEW_TABLE_SQL);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [queryStatus, setQueryStatus] = useState<QueryStatus>("idle");
@@ -48,11 +66,15 @@ export function AnalyticsWorkspace() {
     async function loadInitialData() {
       setBootLoading(true);
       try {
-        const loadedDatasets = await fetchDatasets();
+        const [loadedDatasets, loadedViewTables] = await Promise.all([
+          fetchDatasets(),
+          fetchViewTables(),
+        ]);
         if (!mounted) {
           return;
         }
         setDatasets(loadedDatasets);
+        setViewTables(loadedViewTables);
         const defaultDataset = preferredDataset(loadedDatasets);
         if (defaultDataset !== undefined) {
           applyDatasetDefaults(defaultDataset);
@@ -83,6 +105,41 @@ export function AnalyticsWorkspace() {
     () => datasets.find((dataset) => dataset.name === selectedDatasetName),
     [datasets, selectedDatasetName],
   );
+  const selectedJoinDataset = useMemo(
+    () => datasets.find((dataset) => dataset.name === joinDatasetName),
+    [datasets, joinDatasetName],
+  );
+  const activeJoin = useMemo(
+    () =>
+      joinEnabled &&
+      selectedDataset !== undefined &&
+      selectedJoinDataset !== undefined &&
+      joinLeftColumn.length > 0 &&
+      joinRightColumn.length > 0
+        ? {
+            dataset: selectedJoinDataset,
+            leftColumn: joinLeftColumn,
+            rightColumn: joinRightColumn,
+            joinType,
+          }
+        : null,
+    [
+      joinEnabled,
+      joinLeftColumn,
+      joinRightColumn,
+      joinType,
+      selectedDataset,
+      selectedJoinDataset,
+    ],
+  );
+  const chartColumnOptions = useMemo(
+    () =>
+      chartColumnsFor({
+        dataset: selectedDataset,
+        joinDataset: activeJoin?.dataset,
+      }),
+    [activeJoin?.dataset, selectedDataset],
+  );
 
   const generatedSql = useMemo(() => {
     if (selectedDataset === undefined) {
@@ -90,12 +147,20 @@ export function AnalyticsWorkspace() {
     }
     return buildExploreSql({
       dataset: selectedDataset,
+      join: activeJoin,
       selectedColumns,
       orderBy,
       orderDirection,
       rowLimit,
     });
-  }, [orderBy, orderDirection, rowLimit, selectedColumns, selectedDataset]);
+  }, [
+    activeJoin,
+    orderBy,
+    orderDirection,
+    rowLimit,
+    selectedColumns,
+    selectedDataset,
+  ]);
 
   const metadataLoaded = datasets.length > 0;
   const statusLabel = bootLoading
@@ -134,8 +199,20 @@ export function AnalyticsWorkspace() {
           dataset: selectedDataset.name,
           columns: selectedExploreColumns({
             dataset: selectedDataset,
+            joinDataset: activeJoin?.dataset,
             selectedColumns,
           }),
+          joins:
+            activeJoin === null
+              ? []
+              : [
+                  {
+                    dataset: activeJoin.dataset.name,
+                    left_column: activeJoin.leftColumn,
+                    right_column: activeJoin.rightColumn,
+                    join_type: activeJoin.joinType,
+                  },
+                ],
           order_by: orderBy.length > 0 ? orderBy : null,
           order_direction: orderDirection,
           row_limit: rowLimit,
@@ -159,6 +236,10 @@ export function AnalyticsWorkspace() {
     setOrderBy(defaultOrderFor(dataset));
     setOrderDirection(defaultOrderDirectionFor(dataset));
     setSelectedChartKind(defaultChartFor(dataset));
+    setJoinEnabled(false);
+    setJoinDatasetName("");
+    setJoinLeftColumn("");
+    setJoinRightColumn("");
   }
 
   function handleColumnToggle(columnName: string) {
@@ -168,6 +249,84 @@ export function AnalyticsWorkspace() {
       }
       return [...currentColumns, columnName];
     });
+  }
+
+  function enableDefaultJoin() {
+    if (selectedDataset === undefined) {
+      return;
+    }
+    const defaultJoinDataset = datasets.find(
+      (dataset) => dataset.name !== selectedDataset.name,
+    );
+    if (defaultJoinDataset === undefined) {
+      return;
+    }
+    const [leftColumn, rightColumn] = defaultJoinColumns(
+      selectedDataset,
+      defaultJoinDataset,
+    );
+    setJoinEnabled(true);
+    setJoinDatasetName(defaultJoinDataset.name);
+    setJoinLeftColumn(leftColumn);
+    setJoinRightColumn(rightColumn);
+    setSelectedColumns(defaultColumnsForJoinedDatasets(selectedDataset, defaultJoinDataset));
+    setOrderBy(qualifiedColumnName(selectedDataset.name, defaultOrderFor(selectedDataset)));
+  }
+
+  async function reloadMetadata(preferredDatasetName: string | null) {
+    const [loadedDatasets, loadedViewTables] = await Promise.all([
+      fetchDatasets(),
+      fetchViewTables(),
+    ]);
+    setDatasets(loadedDatasets);
+    setViewTables(loadedViewTables);
+    const preferred = loadedDatasets.find(
+      (dataset) => dataset.name === preferredDatasetName,
+    );
+    if (preferred !== undefined) {
+      applyDatasetDefaults(preferred);
+    }
+  }
+
+  async function runViewTablePreview() {
+    setQueryStatus("loading");
+    setError(null);
+    try {
+      setResult(await previewViewTable(viewTableSql));
+      setQueryStatus("success");
+    } catch (previewError) {
+      setResult(null);
+      setError(
+        previewError instanceof Error
+          ? previewError.message
+          : "View table preview에 실패했습니다.",
+      );
+      setQueryStatus("error");
+    }
+  }
+
+  async function saveViewTable() {
+    setQueryStatus("loading");
+    setError(null);
+    try {
+      const savedDataset = await createViewTable({
+        name: viewTableName,
+        description: viewTableDescription,
+        sourceSql: viewTableSql,
+      });
+      await reloadMetadata(savedDataset.name);
+      setMode("explore");
+      setResult(null);
+      setQueryStatus("success");
+    } catch (saveError) {
+      setResult(null);
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "View table 저장에 실패했습니다.",
+      );
+      setQueryStatus("error");
+    }
   }
 
   return (
@@ -189,6 +348,13 @@ export function AnalyticsWorkspace() {
             onClick={() => setMode("sql-lab")}
           >
             SQL Lab
+          </button>
+          <button
+            className={topNavClass(mode, "view-tables")}
+            type="button"
+            onClick={() => setMode("view-tables")}
+          >
+            View Tables
           </button>
         </nav>
         <div className={`status-pill ${metadataLoaded ? "ok" : "error"}`}>
@@ -238,6 +404,136 @@ export function AnalyticsWorkspace() {
                   ))}
                 </select>
 
+                <div className="join-builder">
+                  <label className="join-toggle">
+                    <input
+                      type="checkbox"
+                      checked={joinEnabled}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          enableDefaultJoin();
+                        } else {
+                          setJoinEnabled(false);
+                          setJoinDatasetName("");
+                          setJoinLeftColumn("");
+                          setJoinRightColumn("");
+                          setSelectedColumns(
+                            selectedDataset === undefined
+                              ? []
+                              : defaultColumnsFor(selectedDataset),
+                          );
+                          setOrderBy(
+                            selectedDataset === undefined
+                              ? ""
+                              : defaultOrderFor(selectedDataset),
+                          );
+                        }
+                      }}
+                    />
+                    <span>
+                      <strong>Join table</strong>
+                      <small>base dataset 기준 1개 JOIN</small>
+                    </span>
+                  </label>
+
+                  {joinEnabled ? (
+                    <div className="join-controls">
+                      <label className="control-label" htmlFor="join-dataset">
+                        Join target
+                      </label>
+                      <select
+                        id="join-dataset"
+                        className="superset-select"
+                        value={joinDatasetName}
+                        onChange={(event) => {
+                          const nextJoinDataset = datasets.find(
+                            (dataset) => dataset.name === event.target.value,
+                          );
+                          setJoinDatasetName(event.target.value);
+                          if (
+                            selectedDataset !== undefined &&
+                            nextJoinDataset !== undefined
+                          ) {
+                            const [leftColumn, rightColumn] = defaultJoinColumns(
+                              selectedDataset,
+                              nextJoinDataset,
+                            );
+                            setJoinLeftColumn(leftColumn);
+                            setJoinRightColumn(rightColumn);
+                            setSelectedColumns(
+                              defaultColumnsForJoinedDatasets(
+                                selectedDataset,
+                                nextJoinDataset,
+                              ),
+                            );
+                          }
+                        }}
+                      >
+                        {datasets
+                          .filter((dataset) => dataset.name !== selectedDatasetName)
+                          .map((dataset) => (
+                            <option key={dataset.name} value={dataset.name}>
+                              {dataset.name}
+                            </option>
+                          ))}
+                      </select>
+
+                      <div className="control-row compact">
+                        <div>
+                          <label className="control-label" htmlFor="join-type">
+                            Join type
+                          </label>
+                          <select
+                            id="join-type"
+                            className="superset-select"
+                            value={joinType}
+                            onChange={(event) =>
+                              setJoinType(event.target.value as ExploreJoinType)
+                            }
+                          >
+                            <option value="inner">INNER</option>
+                            <option value="left">LEFT</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="control-label" htmlFor="join-left">
+                            Base key
+                          </label>
+                          <select
+                            id="join-left"
+                            className="superset-select"
+                            value={joinLeftColumn}
+                            onChange={(event) => setJoinLeftColumn(event.target.value)}
+                          >
+                            {selectedDataset?.columns.map((column) => (
+                              <option key={column.name} value={column.name}>
+                                {column.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="control-label" htmlFor="join-right">
+                            Join key
+                          </label>
+                          <select
+                            id="join-right"
+                            className="superset-select"
+                            value={joinRightColumn}
+                            onChange={(event) => setJoinRightColumn(event.target.value)}
+                          >
+                            {selectedJoinDataset?.columns.map((column) => (
+                              <option key={column.name} value={column.name}>
+                                {column.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
                 <label className="control-label" htmlFor="chart-kind">
                   Visualization type
                 </label>
@@ -268,8 +564,8 @@ export function AnalyticsWorkspace() {
                       onChange={(event) => setOrderBy(event.target.value)}
                     >
                       <option value="">No sort</option>
-                      {selectedDataset?.columns.map((column) => (
-                        <option key={column.name} value={column.name}>
+                      {chartColumnOptions.map((column) => (
+                        <option key={column.value} value={column.value}>
                           {column.label}
                         </option>
                       ))}
@@ -315,12 +611,12 @@ export function AnalyticsWorkspace() {
 
                 <div className="control-label">Columns</div>
                 <div className="column-list">
-                  {selectedDataset?.columns.map((column) => (
-                    <label key={column.name} className="column-chip">
+                  {chartColumnOptions.map((column) => (
+                    <label key={column.value} className="column-chip">
                       <input
                         type="checkbox"
-                        checked={selectedColumns.includes(column.name)}
-                        onChange={() => handleColumnToggle(column.name)}
+                        checked={selectedColumns.includes(column.value)}
+                        onChange={() => handleColumnToggle(column.value)}
                       />
                       <span>
                         <strong>{column.label}</strong>
@@ -387,7 +683,7 @@ export function AnalyticsWorkspace() {
                 </section>
               </section>
             </section>
-          ) : (
+          ) : mode === "sql-lab" ? (
             <section className="sql-lab-grid">
               <section className="sql-lab-editor">
                 <div className="panel-header horizontal">
@@ -452,6 +748,117 @@ export function AnalyticsWorkspace() {
                 <ResultTable result={result} />
               </div>
             </section>
+          ) : (
+            <section className="view-table-grid">
+              <section className="sql-lab-editor">
+                <div className="panel-header horizontal">
+                  <div>
+                    <p className="breadcrumb">View Tables</p>
+                    <h2>Create dataset view</h2>
+                    <p>
+                      원본 events 또는 기존 dataset을 SELECT해서 Chart Builder용
+                      view table로 저장합니다.
+                    </p>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void runViewTablePreview()}
+                      disabled={bootLoading || queryStatus === "loading"}
+                    >
+                      Preview
+                    </button>
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => void saveViewTable()}
+                      disabled={bootLoading || queryStatus === "loading"}
+                    >
+                      Save dataset
+                    </button>
+                  </div>
+                </div>
+
+                <label className="control-label" htmlFor="view-table-name">
+                  View table name
+                </label>
+                <input
+                  id="view-table-name"
+                  className="superset-input"
+                  value={viewTableName}
+                  onChange={(event) => setViewTableName(event.target.value)}
+                />
+
+                <label className="control-label" htmlFor="view-table-description">
+                  Description
+                </label>
+                <input
+                  id="view-table-description"
+                  className="superset-input"
+                  value={viewTableDescription}
+                  onChange={(event) => setViewTableDescription(event.target.value)}
+                />
+
+                <label className="control-label" htmlFor="view-table-sql">
+                  Source SELECT
+                </label>
+                <textarea
+                  id="view-table-sql"
+                  className="sql-editor view-table-source-editor"
+                  value={viewTableSql}
+                  onChange={(event) => setViewTableSql(event.target.value)}
+                  spellCheck={false}
+                />
+                {error !== null ? <div className="error-banner">{error}</div> : null}
+              </section>
+
+              <aside className="metadata-panel">
+                <div className="metadata-header">
+                  <h2>Saved view tables</h2>
+                  <p>저장하면 dataset 목록에 추가되고 Charts에서 바로 선택됩니다.</p>
+                </div>
+                <div className="metadata-list">
+                  {viewTables.length === 0 ? (
+                    <p className="muted">아직 저장된 view table이 없습니다.</p>
+                  ) : (
+                    viewTables.map((viewTable) => (
+                      <article key={viewTable.name} className="metadata-card">
+                        <strong>{viewTable.name}</strong>
+                        <p>{viewTable.description || "No description"}</p>
+                        <div className="metadata-columns">
+                          {viewTable.columns.map((column) => (
+                            <span key={column.name}>
+                              {column.name}
+                              <small>{column.kind}</small>
+                            </span>
+                          ))}
+                        </div>
+                        <button
+                          className="metadata-query-button"
+                          type="button"
+                          onClick={() => {
+                            const dataset = datasets.find(
+                              (item) => item.name === viewTable.name,
+                            );
+                            if (dataset !== undefined) {
+                              applyDatasetDefaults(dataset);
+                              setMode("explore");
+                            }
+                          }}
+                        >
+                          Open in Charts
+                        </button>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </aside>
+
+              <div className="sql-lab-results">
+                <ResultTable result={result} />
+              </div>
+            </section>
           )}
         </section>
       </div>
@@ -470,6 +877,9 @@ function workspaceBreadcrumb(): string {
 function workspaceTitle(mode: WorkspaceMode): string {
   if (mode === "explore") {
     return "Chart builder";
+  }
+  if (mode === "view-tables") {
+    return "View Tables";
   }
   return "SQL Lab";
 }
@@ -521,6 +931,7 @@ function exampleSqlForDataset(dataset: Dataset): string {
   const orderDirection = defaultOrderDirectionFor(dataset);
   return buildExploreSql({
     dataset,
+    join: null,
     selectedColumns: columns,
     orderBy,
     orderDirection,
@@ -537,26 +948,50 @@ function defaultOrderDirectionFor(dataset: Dataset): ExploreOrderDirection {
 
 function buildExploreSql({
   dataset,
+  join,
   selectedColumns,
   orderBy,
   orderDirection,
   rowLimit,
 }: {
   dataset: Dataset;
+  join: {
+    dataset: Dataset;
+    leftColumn: string;
+    rightColumn: string;
+    joinType: ExploreJoinType;
+  } | null;
   selectedColumns: string[];
   orderBy: string;
   orderDirection: ExploreOrderDirection;
   rowLimit: number;
 }): string {
-  const validColumnNames = new Set(dataset.columns.map((column) => column.name));
-  const projection = selectedExploreColumns({ dataset, selectedColumns });
+  const validColumnNames = new Set(
+    chartColumnsFor({ dataset, joinDataset: join?.dataset }).map(
+      (column) => column.value,
+    ),
+  );
+  const projection = selectedExploreColumns({
+    dataset,
+    joinDataset: join?.dataset,
+    selectedColumns,
+  });
   const lines = [
-    `SELECT ${projection.map(formatIdentifier).join(", ")}`,
+    `SELECT ${projection.map(formatColumnSelector).join(", ")}`,
     `FROM ${formatIdentifier(dataset.name)}`,
   ];
+  if (join !== null) {
+    lines.push(
+      `${join.joinType.toUpperCase()} JOIN ${formatIdentifier(join.dataset.name)}`,
+    );
+    lines.push(
+      `  ON ${formatIdentifier(dataset.name)}.${formatIdentifier(join.leftColumn)}` +
+        ` = ${formatIdentifier(join.dataset.name)}.${formatIdentifier(join.rightColumn)}`,
+    );
+  }
   if (orderBy.length > 0 && validColumnNames.has(orderBy)) {
     lines.push(
-      `ORDER BY ${formatIdentifier(orderBy)} ${orderDirection.toUpperCase()}`,
+      `ORDER BY ${formatColumnSelector(orderBy)} ${orderDirection.toUpperCase()}`,
     );
   }
   lines.push(`LIMIT ${rowLimit}`);
@@ -565,14 +1000,22 @@ function buildExploreSql({
 
 function selectedExploreColumns({
   dataset,
+  joinDataset,
   selectedColumns,
 }: {
   dataset: Dataset;
+  joinDataset?: Dataset;
   selectedColumns: string[];
 }): string[] {
-  const validColumnNames = new Set(dataset.columns.map((column) => column.name));
+  const validColumnNames = new Set(
+    chartColumnsFor({ dataset, joinDataset }).map((column) => column.value),
+  );
   const columns = selectedColumns.filter((column) => validColumnNames.has(column));
-  return columns.length > 0 ? columns : defaultColumnsFor(dataset);
+  return columns.length > 0
+    ? columns
+    : joinDataset === undefined
+      ? defaultColumnsFor(dataset)
+      : defaultColumnsForJoinedDatasets(dataset, joinDataset);
 }
 
 function formatIdentifier(identifier: string): string {
@@ -580,6 +1023,79 @@ function formatIdentifier(identifier: string): string {
     throw new Error(`Invalid analytics identifier: ${identifier}`);
   }
   return identifier;
+}
+
+function formatColumnSelector(selector: string): string {
+  if (!selector.includes(".")) {
+    return formatIdentifier(selector);
+  }
+  const [datasetName, columnName] = selector.split(".", 2);
+  return `${formatIdentifier(datasetName)}.${formatIdentifier(columnName)}`;
+}
+
+function qualifiedColumnName(datasetName: string, columnName: string): string {
+  return `${datasetName}.${columnName}`;
+}
+
+function chartColumnsFor({
+  dataset,
+  joinDataset,
+}: {
+  dataset: Dataset | undefined;
+  joinDataset?: Dataset;
+}): Array<{
+  value: string;
+  label: string;
+  kind: string;
+}> {
+  if (dataset === undefined) {
+    return [];
+  }
+  if (joinDataset === undefined) {
+    return dataset.columns.map((column) => ({
+      value: column.name,
+      label: column.label,
+      kind: column.kind,
+    }));
+  }
+  return [dataset, joinDataset].flatMap((item) =>
+    item.columns.map((column) => ({
+      value: qualifiedColumnName(item.name, column.name),
+      label: `${item.name}.${column.name}`,
+      kind: column.kind,
+    })),
+  );
+}
+
+function defaultColumnsForJoinedDatasets(
+  dataset: Dataset,
+  joinDataset: Dataset,
+): string[] {
+  return [
+    ...defaultColumnsFor(dataset)
+      .slice(0, 2)
+      .map((columnName) => qualifiedColumnName(dataset.name, columnName)),
+    ...defaultColumnsFor(joinDataset)
+      .slice(0, 2)
+      .map((columnName) => qualifiedColumnName(joinDataset.name, columnName)),
+  ];
+}
+
+function defaultJoinColumns(
+  dataset: Dataset,
+  joinDataset: Dataset,
+): [string, string] {
+  const joinColumnNames = new Set(joinDataset.columns.map((column) => column.name));
+  const sharedColumn = dataset.columns.find((column) =>
+    joinColumnNames.has(column.name),
+  );
+  if (sharedColumn !== undefined) {
+    return [sharedColumn.name, sharedColumn.name];
+  }
+  return [
+    dataset.columns[0]?.name ?? "",
+    joinDataset.columns[0]?.name ?? "",
+  ];
 }
 
 function queryStatusLabel(status: QueryStatus): string {

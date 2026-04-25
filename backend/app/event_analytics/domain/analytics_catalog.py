@@ -7,6 +7,7 @@ from typing import Literal
 
 ChartKind = Literal["bar", "line", "table", "metric", "pie"]
 ColumnKind = Literal["dimension", "metric", "temporal"]
+DatasetOrigin = Literal["builtin", "view_table"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -26,6 +27,7 @@ class AnalyticsDataset:
     label: str
     description: str
     columns: tuple[AnalyticsDatasetColumn, ...]
+    origin: DatasetOrigin = "builtin"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -37,3 +39,13 @@ class PresetQuery:
     description: str
     sql: str
     chart_kind: ChartKind
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AnalyticsViewTable:
+    """User-created analytics view table metadata."""
+
+    name: str
+    description: str
+    source_sql: str
+    columns: tuple[AnalyticsDatasetColumn, ...]

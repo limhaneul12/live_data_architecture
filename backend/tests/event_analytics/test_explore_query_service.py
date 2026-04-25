@@ -1,26 +1,102 @@
 import pytest
+from app.event_analytics.application.analytics_catalog import get_datasets
 from app.event_analytics.application.explore_query_service import (
     ExploreQueryValidationError,
     build_explore_query,
 )
-from app.event_analytics.domain.explore_query import ExploreQuery
+from app.event_analytics.domain.explore_query import (
+    ExploreColumnRef,
+    ExploreJoin,
+    ExploreQuery,
+)
 
 
 def test_build_explore_query_accepts_catalog_dataset_and_caps_limit() -> None:
     query = build_explore_query(
         dataset_name="event_type_counts",
-        column_names=("event_type", "event_count"),
-        order_by="event_count",
+        datasets=get_datasets(),
+        column_refs=(
+            ExploreColumnRef(
+                dataset_name="event_type_counts",
+                column_name="event_type",
+            ),
+            ExploreColumnRef(
+                dataset_name="event_type_counts",
+                column_name="event_count",
+            ),
+        ),
+        joins=(),
+        order_by=ExploreColumnRef(
+            dataset_name="event_type_counts",
+            column_name="event_count",
+        ),
         order_direction="desc",
         row_limit=5_000,
     )
 
     assert query == ExploreQuery(
         dataset_name="event_type_counts",
-        column_names=("event_type", "event_count"),
-        order_by="event_count",
+        column_refs=(
+            ExploreColumnRef(
+                dataset_name="event_type_counts",
+                column_name="event_type",
+            ),
+            ExploreColumnRef(
+                dataset_name="event_type_counts",
+                column_name="event_count",
+            ),
+        ),
+        joins=(),
+        order_by=ExploreColumnRef(
+            dataset_name="event_type_counts",
+            column_name="event_count",
+        ),
         order_direction="desc",
         row_limit=500,
+    )
+
+
+def test_build_explore_query_accepts_one_join() -> None:
+    query = build_explore_query(
+        dataset_name="product_event_counts",
+        datasets=get_datasets(),
+        column_refs=(
+            ExploreColumnRef(
+                dataset_name="product_event_counts",
+                column_name="product_id",
+            ),
+            ExploreColumnRef(
+                dataset_name="commerce_funnel_counts",
+                column_name="funnel_step",
+            ),
+            ExploreColumnRef(
+                dataset_name="product_event_counts",
+                column_name="event_count",
+            ),
+        ),
+        joins=(
+            ExploreJoin(
+                dataset_name="commerce_funnel_counts",
+                left_column="event_type",
+                right_column="event_type",
+                join_type="inner",
+            ),
+        ),
+        order_by=ExploreColumnRef(
+            dataset_name="product_event_counts",
+            column_name="event_count",
+        ),
+        order_direction="desc",
+        row_limit=100,
+    )
+
+    assert query.joins == (
+        ExploreJoin(
+            dataset_name="commerce_funnel_counts",
+            left_column="event_type",
+            right_column="event_type",
+            join_type="inner",
+        ),
     )
 
 
@@ -42,8 +118,23 @@ def test_build_explore_query_rejects_non_catalog_shape(
     with pytest.raises(ExploreQueryValidationError) as exc_info:
         build_explore_query(
             dataset_name=dataset_name,
-            column_names=column_names,
-            order_by=order_by,
+            datasets=get_datasets(),
+            column_refs=tuple(
+                ExploreColumnRef(
+                    dataset_name=dataset_name,
+                    column_name=column_name,
+                )
+                for column_name in column_names
+            ),
+            joins=(),
+            order_by=(
+                None
+                if order_by is None
+                else ExploreColumnRef(
+                    dataset_name=dataset_name,
+                    column_name=order_by,
+                )
+            ),
             order_direction="desc",
             row_limit=100,
         )

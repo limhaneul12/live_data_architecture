@@ -56,10 +56,19 @@ class Container(containers.DeclarativeContainer):
         ],
     )
 
+    database_address = providers.Dependency(instance_of=str)
     analytics_database_address = providers.Dependency(instance_of=str)
+    database_engine = providers.Resource(
+        init_analytics_engine,
+        database_address=database_address,
+    )
     analytics_engine = providers.Resource(
         init_analytics_engine,
         database_address=analytics_database_address,
+    )
+    database_session_factory = providers.Singleton(
+        build_analytics_session_factory,
+        engine=database_engine,
     )
     analytics_session_factory = providers.Singleton(
         build_analytics_session_factory,
@@ -68,4 +77,5 @@ class Container(containers.DeclarativeContainer):
     event_analytics = providers.Container(
         EventAnalyticsContainer,
         analytics_session_factory=analytics_session_factory,
+        management_session_factory=database_session_factory,
     )
