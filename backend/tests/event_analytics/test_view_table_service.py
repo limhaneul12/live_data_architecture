@@ -66,6 +66,11 @@ class FakeAnalyticsDatasetRepository(AnalyticsDatasetRepository):
         self.view_tables.append(view_table)
         return view_table
 
+    async def delete_view_table(self, name: str) -> None:
+        self.view_tables = [
+            view_table for view_table in self.view_tables if view_table.name != name
+        ]
+
     async def preview_view_table_sql(
         self,
         source_sql: str,
@@ -151,5 +156,35 @@ def test_view_table_create_rejects_builtin_dataset_name() -> None:
                 ),
             )
         )
+
+    assert exc_info.value.reason == "reserved_view_table_name"
+
+
+def test_view_table_delete_removes_saved_dataset() -> None:
+    repository = FakeAnalyticsDatasetRepository()
+    repository.view_tables.append(
+        AnalyticsViewTable(
+            name="user_event_type_counts",
+            description="유저별 이벤트 타입 발생 수",
+            source_sql=(
+                "SELECT user_id, event_type, COUNT(*) AS event_count "
+                "FROM events GROUP BY user_id, event_type"
+            ),
+            columns=(),
+        )
+    )
+    service = build_service(repository)
+
+    asyncio.run(service.delete("USER_EVENT_TYPE_COUNTS"))
+
+    assert repository.view_tables == []
+
+
+def test_view_table_delete_rejects_builtin_dataset_name() -> None:
+    repository = FakeAnalyticsDatasetRepository()
+    service = build_service(repository)
+
+    with pytest.raises(EventAnalyticsViewTableValidationError) as exc_info:
+        asyncio.run(service.delete("event_type_counts"))
 
     assert exc_info.value.reason == "reserved_view_table_name"

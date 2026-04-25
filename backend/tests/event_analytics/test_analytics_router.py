@@ -40,6 +40,7 @@ class FakeAnalyticsQueryRepository(
         self.executed_row_limits: list[int] = []
         self.executed_explore_queries: list[ExploreQuery] = []
         self.created_view_tables: list[tuple[str, str, str]] = []
+        self.deleted_view_tables: list[str] = []
         self.view_tables: list[AnalyticsViewTable] = []
 
     async def execute_select(self, sql: str, row_limit: int) -> AnalyticsRows:
@@ -108,6 +109,12 @@ class FakeAnalyticsQueryRepository(
         )
         self.view_tables.append(view_table)
         return view_table
+
+    async def delete_view_table(self, name: str) -> None:
+        self.deleted_view_tables.append(name)
+        self.view_tables = [
+            view_table for view_table in self.view_tables if view_table.name != name
+        ]
 
     async def preview_view_table_sql(
         self,
@@ -404,6 +411,43 @@ def test_view_table_create_endpoint_saves_dataset() -> None:
     ]
     assert response.json()["name"] == "user_event_type_counts"
     assert response.json()["origin"] == "view_table"
+
+
+def test_view_table_delete_endpoint_removes_saved_dataset() -> None:
+    repository = FakeAnalyticsQueryRepository()
+    repository.view_tables.append(
+        AnalyticsViewTable(
+            name="user_event_type_counts",
+            description="유저별 이벤트 타입 발생 수",
+            source_sql=(
+                "SELECT user_id, event_type, COUNT(*) AS event_count "
+                "FROM events GROUP BY user_id, event_type"
+            ),
+            columns=(),
+        )
+    )
+    client, repository = build_client(repository=repository)
+
+    response = client.delete("/analytics/view-tables/USER_EVENT_TYPE_COUNTS")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert repository.deleted_view_tables == ["user_event_type_counts"]
+    assert repository.view_tables == []
+
+
+def test_view_table_delete_endpoint_rejects_builtin_dataset_name() -> None:
+    client, repository = build_client()
+
+    response = client.delete("/analytics/view-tables/event_type_counts")
+
+    assert response.status_code == 400
+    assert repository.deleted_view_tables == []
+    assert response.json() == {
+        "error_code": "view_table_violation",
+        "message": "built-in dataset이나 원본 table 이름은 view table 이름으로 사용할 수 없습니다.",
+        "rejected_reason": "reserved_view_table_name",
+    }
 
 
 def test_query_endpoint_returns_400_for_mutation_sql() -> None:

@@ -7,6 +7,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from event_generator.faker_catalog import (
+    FakerDataCatalog,
+    PageTarget,
+    Product,
+    UserProfile,
+)
 from event_generator.models import EventType, GeneratedEvent, TrafficPhase
 from event_generator.traffic_profile import TrafficProfile
 
@@ -102,47 +108,6 @@ _HOUR_WEIGHTS_BY_PHASE: dict[TrafficPhase, tuple[int, ...]] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class PageTarget:
-    """Page path and optional category represented by a page view."""
-
-    path: str
-    category_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class Product:
-    """Small catalog product used to generate repeatable product interactions."""
-
-    product_id: str
-    category_id: str
-    price_cents: int
-
-
-_PAGE_TARGETS: tuple[PageTarget, ...] = (
-    PageTarget("/"),
-    PageTarget("/products"),
-    PageTarget("/products/new"),
-    PageTarget("/products/best"),
-    PageTarget("/cart"),
-    PageTarget("/checkout"),
-    PageTarget("/categories/smartphone", "cat_smartphone"),
-    PageTarget("/categories/laptop", "cat_laptop"),
-    PageTarget("/categories/audio", "cat_audio"),
-    PageTarget("/categories/accessory", "cat_accessory"),
-)
-_PRODUCTS: tuple[Product, ...] = (
-    Product("prod_iphone_15", "cat_smartphone", 99_900),
-    Product("prod_galaxy_s24", "cat_smartphone", 89_900),
-    Product("prod_pixel_9", "cat_smartphone", 79_900),
-    Product("prod_macbook_air_m3", "cat_laptop", 129_900),
-    Product("prod_thinkpad_x1", "cat_laptop", 159_900),
-    Product("prod_airpods_pro", "cat_audio", 24_900),
-    Product("prod_sony_wh1000xm5", "cat_audio", 39_900),
-    Product("prod_magic_keyboard", "cat_accessory", 19_900),
-    Product("prod_usb_c_hub", "cat_accessory", 6_900),
-    Product("prod_phone_case_clear", "cat_accessory", 2_900),
-)
 _ERROR_MESSAGES: dict[str, str] = {
     "PAYMENT_DECLINED": "Payment was declined by the card issuer.",
     "TIMEOUT": "Checkout request timed out while waiting for the payment gateway.",
@@ -201,6 +166,7 @@ class EventGenerator:
         self._rng = random.Random(config.seed)  # noqa: S311  # nosec B311
         self._config = config
         self._traffic_profile = traffic_profile
+        self._faker_catalog = FakerDataCatalog(seed=config.seed)
         self._start_time = start_time
         self._event_date = start_time.date()
         self._reference_time = reference_time
@@ -353,46 +319,46 @@ class EventGenerator:
         self, *, event_type: EventType, phase: TrafficPhase
     ) -> GeneratedEvent:
         event_id = self._choose_event_id()
-        user_id = self._choose_user_id()
+        user_profile = self._choose_user_profile()
 
         match event_type:
             case EventType.PAGE_VIEW:
-                page_target = self._choose_page_target()
+                page_target = self._choose_page_target(user_profile=user_profile)
                 return self._base_event(
                     event_id=event_id,
                     event_type=event_type,
-                    user_id=user_id,
+                    user_profile=user_profile,
                     phase=phase,
                     page_path=page_target.path,
                     category_id=page_target.category_id,
                 )
             case EventType.PRODUCT_CLICK:
-                product = self._choose_product()
+                product = self._choose_product(user_profile=user_profile)
                 return self._base_event(
                     event_id=event_id,
                     event_type=event_type,
-                    user_id=user_id,
+                    user_profile=user_profile,
                     phase=phase,
                     page_path=f"/products/{product.product_id}",
                     category_id=product.category_id,
                     product_id=product.product_id,
                 )
             case EventType.ADD_TO_CART:
-                product = self._choose_product()
+                product = self._choose_product(user_profile=user_profile)
                 return self._base_event(
                     event_id=event_id,
                     event_type=event_type,
-                    user_id=user_id,
+                    user_profile=user_profile,
                     phase=phase,
                     category_id=product.category_id,
                     product_id=product.product_id,
                 )
             case EventType.PURCHASE:
-                product = self._choose_product()
+                product = self._choose_product(user_profile=user_profile)
                 return self._base_event(
                     event_id=event_id,
                     event_type=event_type,
-                    user_id=user_id,
+                    user_profile=user_profile,
                     phase=phase,
                     category_id=product.category_id,
                     product_id=product.product_id,
@@ -400,12 +366,12 @@ class EventGenerator:
                     currency="USD",
                 )
             case EventType.CHECKOUT_ERROR:
-                product = self._choose_product()
+                product = self._choose_product(user_profile=user_profile)
                 error_code = self._choose_error_code()
                 return self._base_event(
                     event_id=event_id,
                     event_type=event_type,
-                    user_id=user_id,
+                    user_profile=user_profile,
                     phase=phase,
                     category_id=product.category_id,
                     product_id=product.product_id,
@@ -418,7 +384,7 @@ class EventGenerator:
         *,
         event_id: str,
         event_type: EventType,
-        user_id: str,
+        user_profile: UserProfile,
         phase: TrafficPhase,
         page_path: str | None = None,
         category_id: str | None = None,
@@ -432,7 +398,7 @@ class EventGenerator:
             event_id=event_id,
             event_type=event_type,
             occurred_at=self._choose_occurred_at(phase),
-            user_id=user_id,
+            user_id=user_profile.user_id,
             traffic_phase=phase,
             producer_id=self._config.producer_id,
             page_path=page_path,
@@ -444,14 +410,24 @@ class EventGenerator:
             error_message=error_message,
         )
 
-    def _choose_user_id(self) -> str:
-        return f"user_{self._rng.randint(1, 200):03d}"
+    def _choose_user_profile(self) -> UserProfile:
+        return self._rng.choice(self._faker_catalog.users)
 
-    def _choose_page_target(self) -> PageTarget:
-        return self._rng.choice(_PAGE_TARGETS)
+    def _choose_page_target(self, *, user_profile: UserProfile) -> PageTarget:
+        preferred_targets = self._faker_catalog.page_targets_for_category(
+            user_profile.preferred_category_id,
+        )
+        if preferred_targets and self._rng.random() < 0.7:
+            return self._rng.choice(preferred_targets)
+        return self._rng.choice(self._faker_catalog.page_targets)
 
-    def _choose_product(self) -> Product:
-        return self._rng.choice(_PRODUCTS)
+    def _choose_product(self, *, user_profile: UserProfile) -> Product:
+        preferred_products = self._faker_catalog.products_for_category(
+            user_profile.preferred_category_id,
+        )
+        if preferred_products and self._rng.random() < 0.7:
+            return self._rng.choice(preferred_products)
+        return self._rng.choice(self._faker_catalog.products)
 
     def _choose_error_code(self) -> str:
         return self._rng.choice(tuple(_ERROR_MESSAGES))

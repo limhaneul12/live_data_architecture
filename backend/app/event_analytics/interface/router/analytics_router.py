@@ -30,7 +30,7 @@ from app.shared.exceptions import (
     map_event_analytics_route_errors,
 )
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import JSONResponse
 
 # Broad type justified: FastAPI's `responses` parameter is typed as dict[str, Any].
@@ -309,3 +309,33 @@ async def create_view_table(
         source_sql=request.source_sql,
     )
     return AnalyticsDatasetPayload.from_domain(dataset)
+
+
+@router.delete(
+    "/view-tables/{name}",
+    response_model=None,
+    response_class=Response,
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=VIEW_TABLE_ERROR_RESPONSES,
+    summary="Delete a user-created analytics view table",
+    description="Deletes one user-created analytics view table and its metadata.",
+)
+@map_event_analytics_route_errors(analytics_error_payload)
+@inject
+async def delete_view_table(
+    name: str,
+    service: ViewTableService = Depends(
+        Provide[Container.event_analytics.view_table_service],
+    ),
+) -> Response | JSONResponse:
+    """Delete one user-created analytics view table.
+
+    Args:
+        name: View table name from the route path.
+        service: View table service resolved by FastAPI DI.
+
+    Returns:
+        Empty 204 response or structured error.
+    """
+    await service.delete(name)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

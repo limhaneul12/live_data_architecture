@@ -28,12 +28,23 @@ from app.shared.exceptions import (
     EventAnalyticsDatabaseExecutionError as AnalyticsQueryExecutionError,
 )
 from app.shared.types import JSONObject, JSONValue
-from sqlalchemy import DateTime, Integer, Text, column, func, select, table, text
+from sqlalchemy import (
+    DateTime,
+    Integer,
+    Text,
+    column,
+    delete,
+    func,
+    select,
+    table,
+    text,
+)
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import Select
+from sqlalchemy.sql.dml import Delete
 from sqlalchemy.sql.elements import ColumnElement, TextClause
 from sqlalchemy.sql.selectable import TableClause
 
@@ -208,6 +219,22 @@ class PostgresAnalyticsQueryRepository(
             raise AnalyticsQueryExecutionError from exc
         return view_tables[0]
 
+    async def delete_view_table(self, name: str) -> None:
+        """Delete one user-created analytics view table and its metadata.
+
+        Args:
+            name: Validated view table name.
+
+        Returns:
+            None.
+        """
+        try:
+            async with self._management_session_factory() as session, session.begin():
+                await session.execute(text(build_drop_view_table_sql(name)))
+                await session.execute(build_delete_view_table_metadata_statement(name))
+        except SQLAlchemyError as exc:
+            raise AnalyticsQueryExecutionError from exc
+
     async def _analytics_reader_role_name(self) -> str:
         """Return the PostgreSQL role used for analytics read queries.
 
@@ -317,6 +344,18 @@ def build_grant_view_table_sql(name: str, role_name: str) -> str:
     return f"GRANT SELECT ON TABLE {name} TO {quoted_identifier(role_name)}"  # nosec
 
 
+def build_drop_view_table_sql(name: str) -> str:
+    """Build DDL that deletes a validated user-created analytics view table.
+
+    Args:
+        name: Validated lowercase view table name.
+
+    Returns:
+        PostgreSQL DROP VIEW statement.
+    """
+    return f"DROP VIEW IF EXISTS {name}"  # nosec
+
+
 def quoted_identifier(identifier: str) -> str:
     """Quote a PostgreSQL identifier.
 
@@ -357,6 +396,18 @@ def build_upsert_view_table_metadata_statement(
             "updated_at": func.now(),
         },
     )
+
+
+def build_delete_view_table_metadata_statement(name: str) -> Delete:
+    """Build an ORM-backed delete for one view table metadata row.
+
+    Args:
+        name: Validated view table name.
+
+    Returns:
+        SQLAlchemy delete statement scoped to the target view table.
+    """
+    return delete(AnalyticsViewTableRecord).where(AnalyticsViewTableRecord.name == name)
 
 
 def build_explore_select_statement(query: ExploreQuery) -> AnalyticsSelectStatement:

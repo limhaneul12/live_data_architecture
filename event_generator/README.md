@@ -22,6 +22,9 @@ python -m event_generator
 명시하면 같은 기준 날짜/`--start-time` 안에서 같은 이벤트 순서를 재현하고,
 생략하면 producer 재시작 시 같은 `event_id`를 replay하지 않도록 실행마다
 seed를 자동 생성합니다.
+이벤트의 사용자 풀, 상품 카탈로그, 브라우저에서 볼 수 있는 페이지 경로는 seeded
+Faker 데이터로 생성해 데모 데이터가 매번 재현 가능하면서도 고정 샘플보다 다양하게
+보이도록 했습니다.
 
 ```bash
 python -m event_generator --max-events 10 --seed 20260424 --no-sleep
@@ -117,7 +120,7 @@ single Redis와 Redis Cluster를 모두 지원하며, cluster 모드에서는 `S
 ## 출력 예시
 
 ```json
-{"schema_version":"web_event.v1","event_id":"evt_7f3a9c1e2b4098ab76cd","event_type":"product_click","occurred_at":"2026-04-24T19:42:17.318Z","user_id":"user_013","traffic_phase":"burst","producer_id":"producer_local","page_path":"/products/prod_iphone_15","category_id":"cat_smartphone","product_id":"prod_iphone_15","amount":null,"currency":null,"error_code":null,"error_message":null}
+{"schema_version":"web_event.v1","event_id":"evt_0b9e916b3c6ef372fe94f82a","event_type":"product_click","occurred_at":"2026-04-24T17:08:51.060Z","user_id":"user_4db60b1f99ff","traffic_phase":"normal","producer_id":"producer_local","page_path":"/products/prod_smartphone_navy_him","category_id":"cat_smartphone","product_id":"prod_smartphone_navy_him","amount":null,"currency":null,"error_code":null,"error_message":null}
 ```
 
 ## 종료

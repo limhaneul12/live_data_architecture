@@ -103,7 +103,7 @@ class ViewTableService:
         """
         normalized_name = normalized_view_table_name(name)
         normalized_description = normalized_view_table_description(description)
-        await self._ensure_name_is_available(normalized_name)
+        await self._ensure_name_is_not_reserved(normalized_name)
         validated = await self._validate_source_sql(source_sql, requested_row_limit=1)
         try:
             view_table = await self._repository.create_or_replace_view_table(
@@ -114,6 +114,22 @@ class ViewTableService:
         except EventAnalyticsDatabaseExecutionError as exc:
             raise EventAnalyticsViewTableExecutionUnavailableError from exc
         return dataset_from_view_table(view_table)
+
+    async def delete(self, name: str) -> None:
+        """Delete one user-created view table.
+
+        Args:
+            name: User-submitted view table name.
+
+        Returns:
+            None.
+        """
+        normalized_name = normalized_view_table_name(name)
+        await self._ensure_name_is_not_reserved(normalized_name)
+        try:
+            await self._repository.delete_view_table(normalized_name)
+        except EventAnalyticsDatabaseExecutionError as exc:
+            raise EventAnalyticsViewTableExecutionUnavailableError from exc
 
     async def _validate_source_sql(
         self,
@@ -155,7 +171,7 @@ class ViewTableService:
             await self._catalog_service.allowed_dataset_names()
         ) | VIEW_TABLE_SOURCE_RELATION_NAMES
 
-    async def _ensure_name_is_available(self, name: str) -> None:
+    async def _ensure_name_is_not_reserved(self, name: str) -> None:
         """Reject names that collide with protected base relations.
 
         Args:
