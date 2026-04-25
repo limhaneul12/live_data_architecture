@@ -11,7 +11,16 @@ type ChartPoint = {
   label: string;
 };
 
+type ChartDatum = {
+  label: string;
+  value: number;
+};
+
 const COLORS = ["#5b7cfa", "#35c2a1", "#ffb84d", "#ff6b87", "#9b7cff", "#4db6ff"];
+const BAR_PREVIEW_ROW_LIMIT = 12;
+const DONUT_PREVIEW_SLICE_LIMIT = 7;
+const LINE_PREVIEW_SERIES_LIMIT = 6;
+const LABEL_PREVIEW_LENGTH = 28;
 
 export function ChartPreview({
   result,
@@ -82,12 +91,16 @@ function BarPreview({ result }: ChartPreviewProps & { result: QueryResult }) {
     };
   });
   const maxValue = Math.max(...bars.map((bar) => bar.value), 1);
+  const visibleBars = bars.slice(0, BAR_PREVIEW_ROW_LIMIT);
+  const hiddenBarCount = Math.max(bars.length - visibleBars.length, 0);
 
   return (
     <div className="bar-list">
-      {bars.map((bar) => (
+      {visibleBars.map((bar) => (
         <div key={`${bar.label}-${bar.value}`} className="bar-row">
-          <span className="bar-label">{bar.label}</span>
+          <span className="bar-label" title={bar.label}>
+            {truncateLabel(bar.label)}
+          </span>
           <div className="bar-track">
             <span
               className="bar-fill"
@@ -97,6 +110,12 @@ function BarPreview({ result }: ChartPreviewProps & { result: QueryResult }) {
           <strong>{bar.value}</strong>
         </div>
       ))}
+      {hiddenBarCount > 0 ? (
+        <p className="chart-density-note">
+          미리보기에서는 앞 {BAR_PREVIEW_ROW_LIMIT}개만 표시했습니다. 나머지 {hiddenBarCount}개 행은 아래 표에서
+          확인하세요.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -109,6 +128,8 @@ function LinePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
   }
 
   const seriesGroups = groupRowsBySeries(result.rows, result.chart.series_axis);
+  const visibleSeriesGroups = seriesGroups.slice(0, LINE_PREVIEW_SERIES_LIMIT);
+  const hiddenSeriesCount = Math.max(seriesGroups.length - visibleSeriesGroups.length, 0);
   const xLabels = uniqueLabels(result.rows.map((row) => String(row[xAxis] ?? "-")));
   const maxValue = Math.max(
     ...result.rows.map((row) => numericValue(row[yAxis])),
@@ -120,7 +141,7 @@ function LinePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
       <svg className="line-chart" viewBox="0 0 640 220" role="img" aria-label="Line chart preview">
         <path d="M 30 190 H 610" className="axis" />
         <path d="M 30 20 V 190" className="axis" />
-        {seriesGroups.map((group, groupIndex) => {
+        {visibleSeriesGroups.map((group, groupIndex) => {
           const points = buildLinePoints({ rows: group.rows, xAxis, yAxis, xLabels, maxValue });
           const path = linePath(points);
           const color = COLORS[groupIndex % COLORS.length];
@@ -142,12 +163,15 @@ function LinePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
         })}
       </svg>
       <div className="legend-row">
-        {seriesGroups.map((group, index) => (
-          <span key={group.name} className="legend-item">
+        {visibleSeriesGroups.map((group, index) => (
+          <span key={group.name} className="legend-item" title={group.name}>
             <i style={{ background: COLORS[index % COLORS.length] }} />
-            {group.name}
+            <span className="legend-label">{truncateLabel(group.name)}</span>
           </span>
         ))}
+        {hiddenSeriesCount > 0 ? (
+          <span className="legend-more">+{hiddenSeriesCount} series</span>
+        ) : null}
       </div>
       <p className="chart-caption">
         {xLabels[0] ?? "-"} → {xLabels.at(-1) ?? "-"}
@@ -163,17 +187,20 @@ function PiePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
     return <p className="muted">donut chart에 필요한 label/metric 축을 찾지 못했습니다.</p>;
   }
 
-  const slices = result.rows
-    .map((row, index) => {
+  const rawSlices = result.rows
+    .map((row) => {
       const baseLabel = String(row[xAxis] ?? "-");
       const seriesLabel = seriesValue(row, result.chart.series_axis);
       return {
         label: seriesLabel === null ? baseLabel : `${baseLabel} · ${seriesLabel}`,
         value: Math.max(numericValue(row[yAxis]), 0),
-        color: COLORS[index % COLORS.length],
       };
     })
     .filter((slice) => slice.value > 0);
+  const slices = compactDonutSlices(rawSlices).map((slice, index) => ({
+    ...slice,
+    color: COLORS[index % COLORS.length],
+  }));
   const total = slices.reduce((sum, slice) => sum + slice.value, 0);
   if (total <= 0) {
     return <p className="muted">donut chart로 표시할 양수 metric이 없습니다.</p>;
@@ -203,9 +230,9 @@ function PiePreview({ result }: ChartPreviewProps & { result: QueryResult }) {
       </svg>
       <div className="donut-legend">
         {slices.map((slice) => (
-          <span key={slice.label} className="legend-item">
+          <span key={slice.label} className="legend-item" title={slice.label}>
             <i style={{ background: slice.color }} />
-            {slice.label}
+            <span className="legend-label">{truncateLabel(slice.label)}</span>
             <strong>{Math.round((slice.value / total) * 100)}%</strong>
           </span>
         ))}
@@ -233,6 +260,25 @@ function groupRowsBySeries(rows: QueryRow[], seriesAxis: string | null): Array<{
 
 function uniqueLabels(labels: string[]): string[] {
   return Array.from(new Set(labels));
+}
+
+function compactDonutSlices(slices: ChartDatum[]): ChartDatum[] {
+  if (slices.length <= DONUT_PREVIEW_SLICE_LIMIT) {
+    return slices;
+  }
+
+  const visibleSliceLimit = DONUT_PREVIEW_SLICE_LIMIT - 1;
+  const sortedSlices = [...slices].sort((left, right) => right.value - left.value);
+  const visibleSlices = sortedSlices.slice(0, visibleSliceLimit);
+  const hiddenSlices = sortedSlices.slice(visibleSliceLimit);
+  const hiddenValue = hiddenSlices.reduce((sum, slice) => sum + slice.value, 0);
+  return [
+    ...visibleSlices,
+    {
+      label: `Other (${hiddenSlices.length})`,
+      value: hiddenValue,
+    },
+  ];
 }
 
 function buildLinePoints({
@@ -316,4 +362,11 @@ function formatValue(value: QueryRow[string]): string {
     return "-";
   }
   return String(value);
+}
+
+function truncateLabel(label: string): string {
+  if (label.length <= LABEL_PREVIEW_LENGTH) {
+    return label;
+  }
+  return `${label.slice(0, LABEL_PREVIEW_LENGTH - 1)}…`;
 }

@@ -546,10 +546,36 @@ p {
   overflow-wrap: anywhere;
 }
 
+.legend-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .legend-item i {
+  flex: 0 0 auto;
   width: 10px;
   height: 10px;
   border-radius: 999px;
+}
+
+.legend-more,
+.chart-density-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.legend-more {
+  align-self: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.chart-density-note {
+  margin: 10px 0 0;
 }
 
 .donut-chart-wrap {
@@ -662,12 +688,15 @@ td {
 
 .sql-lab-grid {
   display: grid;
+  align-items: start;
   grid-template-columns: minmax(0, 1.1fr) 320px;
   gap: 14px;
 }
 
 .sql-editor {
-  min-height: 360px;
+  height: clamp(180px, 24vh, 260px);
+  min-height: 160px;
+  max-height: 420px;
   padding: 16px;
   resize: vertical;
   background: var(--code);
