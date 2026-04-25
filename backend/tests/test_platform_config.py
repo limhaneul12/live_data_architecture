@@ -1,4 +1,11 @@
-from app.platform.config import AppConfig, DatabaseConfig, StreamConfig
+import pytest
+from app.platform.config import (
+    AnalyticsDatabaseConfig,
+    AppConfig,
+    DatabaseConfig,
+    StreamConfig,
+    resolve_analytics_database_address,
+)
 
 
 def test_app_config_reads_service_env() -> None:
@@ -17,6 +24,45 @@ def test_database_config_reads_database_address() -> None:
     assert (
         str(config.db_address)
         == "postgresql://live_data:live_data@localhost:5432/live_data"
+    )
+
+
+def test_analytics_database_config_is_optional() -> None:
+    config = AnalyticsDatabaseConfig()
+
+    assert config.db_address is None
+
+
+def test_resolve_analytics_database_address_falls_back_to_writer_address() -> None:
+    database_config = DatabaseConfig()
+    analytics_database_config = AnalyticsDatabaseConfig()
+
+    resolved = resolve_analytics_database_address(
+        database_config=database_config,
+        analytics_database_config=analytics_database_config,
+    )
+
+    assert resolved == database_config.db_address
+
+
+def test_resolve_analytics_database_address_prefers_read_only_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "ANALYTICS_DATABASE_DB_ADDRESS",
+        "postgresql://analytics_reader:analytics_reader@localhost:5432/live_data",
+    )
+    database_config = DatabaseConfig()
+    analytics_database_config = AnalyticsDatabaseConfig()
+
+    resolved = resolve_analytics_database_address(
+        database_config=database_config,
+        analytics_database_config=analytics_database_config,
+    )
+
+    assert (
+        str(resolved)
+        == "postgresql://analytics_reader:analytics_reader@localhost:5432/live_data"
     )
 
 

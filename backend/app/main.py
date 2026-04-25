@@ -21,7 +21,13 @@ from app.event_analytics.interface.consumer_lifespan import (
 from app.event_analytics.interface.router.analytics_router import (
     install_analytics_routes,
 )
-from app.platform.config import AppConfig, DatabaseConfig, StreamConfig
+from app.platform.config import (
+    AnalyticsDatabaseConfig,
+    AppConfig,
+    DatabaseConfig,
+    StreamConfig,
+    resolve_analytics_database_address,
+)
 from app.platform.health_router import install_health_routes
 from app.platform.lifecycle import LifecycleState
 from app.platform.logging import configure_logging
@@ -72,8 +78,13 @@ def create_app(app_config: AppConfig) -> FastAPI:
     """
     lifecycle = LifecycleState()
     event_consumer_runtime: EventConsumerRuntime | None = None
+    database_config = DatabaseConfig()
+    analytics_database_address = resolve_analytics_database_address(
+        database_config=database_config,
+        analytics_database_config=AnalyticsDatabaseConfig(),
+    )
     analytics_engine = create_async_engine(
-        to_sqlalchemy_async_url(str(DatabaseConfig().db_address)),
+        to_sqlalchemy_async_url(str(analytics_database_address)),
     )
     analytics_session_factory = async_sessionmaker(
         analytics_engine,
@@ -130,7 +141,7 @@ def create_app(app_config: AppConfig) -> FastAPI:
             lifecycle.mark_redis_starting()
             try:
                 event_consumer_runtime = await start_event_consumer_runtime(
-                    database_url=str(DatabaseConfig().db_address),
+                    database_url=str(database_config.db_address),
                     stream_config=StreamConfig(),
                 )
             except Exception:
