@@ -5,10 +5,8 @@ import {
   type ChartKind,
   type Dataset,
   type ExploreOrderDirection,
-  type PresetQuery,
   type QueryResult,
   fetchDatasets,
-  fetchPresets,
   runAnalyticsQuery,
   runExploreQuery,
 } from "../lib/api";
@@ -31,7 +29,6 @@ type QueryStatus = "idle" | "loading" | "success" | "error";
 
 export function AnalyticsWorkspace() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [presets, setPresets] = useState<PresetQuery[]>([]);
   const [mode, setMode] = useState<WorkspaceMode>("explore");
   const [selectedDatasetName, setSelectedDatasetName] = useState("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -40,7 +37,6 @@ export function AnalyticsWorkspace() {
   const [orderDirection, setOrderDirection] =
     useState<ExploreOrderDirection>("desc");
   const [rowLimit, setRowLimit] = useState<number>(100);
-  const [activePreset, setActivePreset] = useState<string | null>(null);
   const [sqlLabSql, setSqlLabSql] = useState(DEFAULT_SQL);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,23 +48,14 @@ export function AnalyticsWorkspace() {
     async function loadInitialData() {
       setBootLoading(true);
       try {
-        const [loadedDatasets, loadedPresets] = await Promise.all([
-          fetchDatasets(),
-          fetchPresets(),
-        ]);
+        const loadedDatasets = await fetchDatasets();
         if (!mounted) {
           return;
         }
         setDatasets(loadedDatasets);
-        setPresets(loadedPresets);
         const defaultDataset = preferredDataset(loadedDatasets);
         if (defaultDataset !== undefined) {
           applyDatasetDefaults(defaultDataset);
-        }
-        const firstPreset = loadedPresets[0];
-        if (firstPreset !== undefined) {
-          setActivePreset(firstPreset.slug);
-          setSqlLabSql(firstPreset.sql);
         }
       } catch (loadError) {
         if (mounted) {
@@ -110,7 +97,7 @@ export function AnalyticsWorkspace() {
     });
   }, [orderBy, orderDirection, rowLimit, selectedColumns, selectedDataset]);
 
-  const metadataLoaded = datasets.length > 0 && presets.length > 0;
+  const metadataLoaded = datasets.length > 0;
   const statusLabel = bootLoading
     ? "Loading metadata"
     : metadataLoaded
@@ -172,18 +159,9 @@ export function AnalyticsWorkspace() {
     setOrderBy(defaultOrderFor(dataset));
     setOrderDirection(defaultOrderDirectionFor(dataset));
     setSelectedChartKind(defaultChartFor(dataset));
-    setActivePreset(null);
-  }
-
-  function handlePresetClick(preset: PresetQuery) {
-    setMode("sql-lab");
-    setActivePreset(preset.slug);
-    setSqlLabSql(preset.sql);
-    setSelectedChartKind(preset.chart_kind);
   }
 
   function handleColumnToggle(columnName: string) {
-    setActivePreset(null);
     setSelectedColumns((currentColumns) => {
       if (currentColumns.includes(columnName)) {
         return currentColumns.filter((name) => name !== columnName);
@@ -206,29 +184,6 @@ export function AnalyticsWorkspace() {
       </header>
 
       <div className="superset-layout">
-        <aside className="superset-sidebar">
-          <section className="sidebar-section">
-            <h2>Saved queries</h2>
-            <div className="saved-query-list">
-              {presets.map((preset) => (
-                <button
-                  key={preset.slug}
-                  className={
-                    activePreset === preset.slug
-                      ? "saved-query active"
-                      : "saved-query"
-                  }
-                  type="button"
-                  onClick={() => handlePresetClick(preset)}
-                >
-                  <strong>{preset.label}</strong>
-                  <span>{preset.description}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </aside>
-
         <section className="superset-main">
           <div className="page-toolbar">
             <div>
@@ -280,7 +235,7 @@ export function AnalyticsWorkspace() {
                 >
                   {datasets.map((dataset) => (
                     <option key={dataset.name} value={dataset.name}>
-                      {dataset.label}
+                      {dataset.name}
                     </option>
                   ))}
                 </select>
@@ -393,7 +348,7 @@ export function AnalyticsWorkspace() {
                     <p className="breadcrumb">
                       {selectedDataset?.name ?? "table"} / {selectedChartKind}
                     </p>
-                    <h2>{selectedDataset?.label ?? "Table"}</h2>
+                    <h2>{selectedDataset?.name ?? "Table"}</h2>
                   </div>
                   <span className={`query-status ${queryStatus}`}>
                     {queryStatusLabel(queryStatus)}
@@ -455,7 +410,6 @@ export function AnalyticsWorkspace() {
                   className="sql-editor"
                   value={sqlLabSql}
                   onChange={(event) => {
-                    setActivePreset(null);
                     setSqlLabSql(event.target.value);
                   }}
                   spellCheck={false}
@@ -472,8 +426,7 @@ export function AnalyticsWorkspace() {
                 <div className="metadata-list">
                   {datasets.map((dataset) => (
                     <article key={dataset.name} className="metadata-card">
-                      <strong>{dataset.label}</strong>
-                      <code>{dataset.name}</code>
+                      <strong>{dataset.name}</strong>
                       <p>{dataset.description}</p>
                       <div className="metadata-columns">
                         {dataset.columns.map((column) => (
@@ -487,7 +440,6 @@ export function AnalyticsWorkspace() {
                         className="metadata-query-button"
                         type="button"
                         onClick={() => {
-                          setActivePreset(null);
                           setSqlLabSql(exampleSqlForDataset(dataset));
                         }}
                       >

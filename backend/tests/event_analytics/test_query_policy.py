@@ -27,6 +27,16 @@ def test_query_policy_accepts_select_from_allowlisted_view() -> None:
     assert row_limit == 100
 
 
+def test_query_policy_matches_allowlisted_view_case_insensitively() -> None:
+    normalized_sql, relations, row_limit = validate_sql(
+        "SELECT EVENT_TYPE, EVENT_COUNT FROM EVENT_TYPE_COUNTS"
+    )
+
+    assert normalized_sql == "SELECT EVENT_TYPE, EVENT_COUNT FROM EVENT_TYPE_COUNTS"
+    assert relations == frozenset({"event_type_counts"})
+    assert row_limit == 100
+
+
 def test_query_policy_accepts_filtering_and_ordering_on_single_allowlisted_view() -> (
     None
 ):
