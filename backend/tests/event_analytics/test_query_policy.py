@@ -58,6 +58,73 @@ def test_query_policy_accepts_filtering_and_ordering_on_single_allowlisted_view(
     assert row_limit == 50
 
 
+def test_query_policy_accepts_join_between_allowlisted_views() -> None:
+    normalized_sql, relations, row_limit = validate_sql(
+        """
+        SELECT e.event_type, e.event_count, f.funnel_step
+        FROM event_type_counts AS e
+        JOIN commerce_funnel_counts AS f
+          ON e.event_type = f.event_type
+        ORDER BY e.event_count DESC
+        """,
+        row_limit=50,
+    )
+
+    assert normalized_sql == (
+        "SELECT e.event_type, e.event_count, f.funnel_step FROM event_type_counts "
+        "AS e JOIN commerce_funnel_counts AS f ON e.event_type = f.event_type "
+        "ORDER BY e.event_count DESC"
+    )
+    assert relations == frozenset({"event_type_counts", "commerce_funnel_counts"})
+    assert row_limit == 50
+
+
+def test_query_policy_accepts_grouping_and_allowlisted_aggregate_functions() -> None:
+    normalized_sql, relations, row_limit = validate_sql(
+        """
+        SELECT event_type, SUM(event_count) AS total_count
+        FROM product_event_counts
+        GROUP BY event_type
+        ORDER BY total_count DESC
+        """,
+        row_limit=50,
+    )
+
+    assert normalized_sql == (
+        "SELECT event_type, SUM(event_count) AS total_count "
+        "FROM product_event_counts GROUP BY event_type ORDER BY total_count DESC"
+    )
+    assert relations == frozenset({"product_event_counts"})
+    assert row_limit == 50
+
+
+def test_query_policy_accepts_read_only_cte_and_subquery_on_allowlisted_views() -> None:
+    normalized_sql, relations, row_limit = validate_sql(
+        """
+        WITH high_events AS (
+          SELECT event_type, event_count
+          FROM event_type_counts
+          WHERE event_count > (
+            SELECT AVG(event_count)
+            FROM event_type_counts
+          )
+        )
+        SELECT event_type, event_count
+        FROM high_events
+        ORDER BY event_count DESC
+        """,
+        row_limit=50,
+    )
+
+    assert normalized_sql == (
+        "WITH high_events AS (SELECT event_type, event_count FROM event_type_counts "
+        "WHERE event_count > (SELECT AVG(event_count) FROM event_type_counts)) "
+        "SELECT event_type, event_count FROM high_events ORDER BY event_count DESC"
+    )
+    assert relations == frozenset({"event_type_counts"})
+    assert row_limit == 50
+
+
 def test_query_policy_caps_requested_row_limit() -> None:
     _sql, _relations, row_limit = validate_sql(
         "SELECT event_type FROM event_type_counts",
@@ -105,50 +172,12 @@ def test_query_policy_rejects_unsafe_sql(sql: str, reason: str) -> None:
             "disallowed_function",
         ),
         (
-            "SELECT count(*) FROM event_type_counts",
+            "SELECT * FROM event_type_counts CROSS JOIN LATERAL (SELECT pg_sleep(1)) s",
             "disallowed_function",
         ),
         (
-            "SELECT * FROM event_type_counts JOIN user_event_counts USING (user_id)",
-            "disallowed_join",
-        ),
-        (
-            "SELECT * FROM event_type_counts CROSS JOIN user_event_counts",
-            "disallowed_join",
-        ),
-        (
-            "SELECT * FROM event_type_counts CROSS JOIN LATERAL (SELECT pg_sleep(1)) s",
-            "disallowed_subquery",
-        ),
-        (
-            "SELECT * FROM event_type_counts WHERE event_count = ALL(SELECT 1)",
-            "disallowed_subquery",
-        ),
-        (
-            "SELECT * FROM event_type_counts WHERE event_count = SOME(SELECT 1)",
-            "disallowed_subquery",
-        ),
-        (
-            """
-            SELECT * FROM event_type_counts
-            WHERE event_count IN (
-              SELECT event_count FROM user_event_counts
-            )
-            """,
-            "disallowed_subquery",
-        ),
-        (
-            """
-            WITH ranked AS (
-              SELECT event_type, event_count FROM event_type_counts
-            )
-            SELECT event_type FROM ranked
-            """,
-            "disallowed_cte",
-        ),
-        (
-            "SELECT * FROM (SELECT * FROM event_type_counts) AS nested_events",
-            "disallowed_subquery",
+            "SELECT version() FROM event_type_counts",
+            "disallowed_function",
         ),
         (
             "SELECT * INTO temp_event_counts FROM event_type_counts",
@@ -159,32 +188,16 @@ def test_query_policy_rejects_unsafe_sql(sql: str, reason: str) -> None:
             "disallowed_locking_read",
         ),
         (
-            "SELECT event_type FROM event_type_counts OFFSET 1000000",
-            "disallowed_offset",
-        ),
-        (
-            "SELECT DISTINCT event_type FROM event_type_counts",
-            "disallowed_distinct",
-        ),
-        (
-            "SELECT DISTINCT ON (event_type) event_type FROM event_type_counts",
-            "disallowed_distinct",
-        ),
-        (
             "SELECT * FROM event_type_counts TABLESAMPLE SYSTEM (100)",
             "disallowed_table_sample",
         ),
         (
-            """
-            SELECT event_type, event_count
-            FROM event_type_counts
-            GROUP BY event_type, event_count
-            """,
-            "disallowed_grouping",
+            "SELECT * FROM information_schema.tables",
+            "disallowed_system_catalog",
         ),
         (
-            "SELECT event_type, event_count FROM event_type_counts ORDER BY 2 DESC",
-            "disallowed_ordinal_order",
+            "SELECT * FROM pg_catalog.pg_user",
+            "disallowed_system_catalog",
         ),
     ],
 )

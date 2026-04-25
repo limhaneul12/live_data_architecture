@@ -96,7 +96,7 @@ class TrafficProfile:
             seed: Seed for deterministic traffic phase selection.
             config: Traffic phase duration and rate configuration.
         """
-        self._rng = random.Random(seed)  # noqa: S311
+        self._rng = random.Random(seed)  # noqa: S311  # nosec B311
         self._config = config
         self._current_window: PhaseWindow | None = None
         self._remaining_events_in_window = 0

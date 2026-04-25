@@ -117,7 +117,7 @@ def build_limited_select_sql(sql: str) -> str:
     """
     # Safe by construction: `sql` is accepted only after parser-backed SELECT
     # validation and generated-view allowlist checks in AnalyticsSqlPolicy.
-    return f"SELECT * FROM ({sql}) AS analytics_query LIMIT :row_limit"  # noqa: S608
+    return f"SELECT * FROM ({sql}) AS analytics_query LIMIT :row_limit"  # nosec  # noqa: S608
 
 
 def build_explore_select_statement(query: ExploreQuery) -> AnalyticsSelectStatement:

@@ -198,7 +198,7 @@ class EventGenerator:
             reference_time=reference_time,
         )
 
-        self._rng = random.Random(config.seed)  # noqa: S311
+        self._rng = random.Random(config.seed)  # noqa: S311  # nosec B311
         self._config = config
         self._traffic_profile = traffic_profile
         self._start_time = start_time

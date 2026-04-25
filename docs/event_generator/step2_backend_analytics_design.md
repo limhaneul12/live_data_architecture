@@ -92,16 +92,17 @@ Manual SQL endpoint는 아래 정책을 서버에서 강제한다.
 - 한 번에 statement 하나만 허용한다.
 - root statement는 `SELECT`만 허용한다.
 - `WITH x AS (DELETE ...) SELECT ...` 같은 data-modifying CTE를 거부한다.
-- read-only CTE도 거부한다. v1 SQL UI는 단순 SELECT만 허용한다.
-- subquery와 lateral query를 거부한다.
-- `ALL(SELECT ...)`, `SOME(SELECT ...)`, `IN (SELECT ...)`처럼 `Subquery`
-  노드로만 잡히지 않는 nested SELECT도 거부한다.
-- join을 거부한다. v1에서는 한 번에 하나의 generated view만 조회하게 제한한다.
-- 함수 호출을 거부한다. 예: `pg_sleep`, `pg_advisory_lock`, `set_config`, `count(*)`
+- read-only CTE, subquery, join, `WHERE`, `GROUP BY`, `ORDER BY`, `DISTINCT`,
+  `OFFSET`은 허용한다. Superset SQL Lab처럼 생 SQL을 쓰되, 참조 relation을
+  generated view allowlist 안에 가둔다.
+- 함수는 좁은 allowlist만 허용한다. 현재 허용 함수는 `COUNT`, `SUM`, `AVG`,
+  `MIN`, `MAX`, `ROUND`, `DATE_TRUNC` 계열이다.
+- `pg_sleep`, `pg_advisory_lock`, `set_config`, `version`, `generate_series`처럼
+  allowlist 밖의 함수는 거부한다.
 - `SELECT INTO`를 거부한다.
 - `FOR UPDATE` 같은 locking read를 거부한다.
-- 비용 증폭 read-only shape인 `OFFSET`, `DISTINCT`, `TABLESAMPLE`, `GROUP BY`,
-  ordinal `ORDER BY 2`를 거부한다.
+- `TABLESAMPLE`은 현재 SQL Lab 목적과 맞지 않아 거부한다.
+- `information_schema`, `pg_catalog` 같은 system catalog/schema relation을 거부한다.
 - schema/catalog qualified relation을 거부한다. 예: `public.event_type_counts`
 - relation은 generated view allowlist에 있어야 한다.
 - raw `events` table은 manual SQL에서 거부한다.
@@ -111,9 +112,11 @@ Manual SQL endpoint는 아래 정책을 서버에서 강제한다.
 - PostgreSQL `search_path`는 `public, pg_catalog`로 고정한다.
 - PostgreSQL transaction 안에서 `SET LOCAL statement_timeout`, `lock_timeout`,
   `idle_in_transaction_session_timeout`을 적용한다.
+- accepted/rejected/completed SQL Lab 실행은 raw SQL 전문 대신 SHA-256 hash,
+  relation, row count, rejection reason 중심으로 audit log를 남긴다.
 
-허용 예시는 아래처럼 **allowlisted generated view 하나를 대상으로 column 선택,
-filter, order, limit만 수행하는 형태**다.
+허용 예시는 아래처럼 **allowlisted generated view를 대상으로 column 선택,
+filter, join, group, order, limit을 수행하는 형태**다.
 
 ```sql
 SELECT event_type, event_count
@@ -121,23 +124,37 @@ FROM event_type_counts
 WHERE event_count > 0
 ORDER BY event_count DESC, event_type
 LIMIT 20;
+
+SELECT e.event_type, SUM(p.event_count) AS product_events
+FROM event_type_counts AS e
+JOIN product_event_counts AS p
+  ON e.event_type = p.event_type
+GROUP BY e.event_type
+ORDER BY product_events DESC;
+
+WITH high_events AS (
+  SELECT event_type, event_count
+  FROM event_type_counts
+  WHERE event_count > (
+    SELECT AVG(event_count)
+    FROM event_type_counts
+  )
+)
+SELECT event_type, event_count
+FROM high_events
+ORDER BY event_count DESC;
 ```
 
 거부 예시는 아래와 같다.
 
 ```sql
 SELECT pg_sleep(10), event_count FROM event_type_counts;
-SELECT * FROM event_type_counts CROSS JOIN user_event_counts;
-SELECT * FROM event_type_counts WHERE event_count = ALL(SELECT 1);
-WITH ranked AS (SELECT * FROM event_type_counts) SELECT * FROM ranked;
-SELECT * FROM (SELECT * FROM event_type_counts) AS nested_events;
+SELECT version() FROM event_type_counts;
+SELECT * FROM information_schema.tables;
+SELECT * FROM pg_catalog.pg_user;
 SELECT * INTO temp_event_counts FROM event_type_counts;
 SELECT * FROM event_type_counts FOR UPDATE;
-SELECT event_type FROM event_type_counts OFFSET 1000000;
-SELECT DISTINCT event_type FROM event_type_counts;
 SELECT * FROM event_type_counts TABLESAMPLE SYSTEM (100);
-SELECT event_type, event_count FROM event_type_counts GROUP BY event_type, event_count;
-SELECT event_type, event_count FROM event_type_counts ORDER BY 2 DESC;
 SELECT * FROM events;
 ```
 
@@ -151,9 +168,9 @@ SELECT * FROM events;
   view allowlist만 노출한다.
 - `SET TRANSACTION READ ONLY`는 DML/DDL을 줄이는 방어선이지만, read-only 함수 호출,
   무거운 join/subquery, catalog 조회 같은 위험을 전부 막지는 못한다. 그래서
-  validator에서 read-only attack surface도 보수적으로 차단하고 timeout을 적용한다.
+  validator에서 system catalog와 위험 함수 surface를 차단하고 timeout을 적용한다.
 - production 수준으로 끌어올릴 경우 dedicated read-only DB role, schema 권한 분리,
-  statement cost 제한을 추가로 검토해야 한다.
+  statement cost 제한, 사용자별 query cancel endpoint를 추가로 검토해야 한다.
 - Explore 화면은 raw SQL 문자열 조립 대신 `/analytics/explore-query` structured API를
   사용한다. 이 endpoint는 dataset/columns/order/limit만 입력으로 받고, backend에서
   SQLAlchemy Core `select()`로 SQL을 생성한다. SQL Lab의 manual SQL 경로는 고급 확인용으로

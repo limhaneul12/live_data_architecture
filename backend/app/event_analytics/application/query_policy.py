@@ -20,17 +20,11 @@ SqlPolicyRejectionReason = Literal[
     "multiple_statements",
     "non_select_statement",
     "unsafe_cte",
-    "disallowed_cte",
-    "disallowed_subquery",
-    "disallowed_join",
     "disallowed_function",
     "disallowed_select_into",
     "disallowed_locking_read",
-    "disallowed_offset",
-    "disallowed_distinct",
     "disallowed_table_sample",
-    "disallowed_grouping",
-    "disallowed_ordinal_order",
+    "disallowed_system_catalog",
     "cross_schema_relation",
     "unknown_relation",
     "missing_relation",
@@ -47,6 +41,20 @@ _MUTATING_EXPRESSIONS = (
     exp.TruncateTable,
     exp.Update,
 )
+
+ALLOWED_FUNCTION_NAMES: Final = frozenset(
+    {
+        "avg",
+        "count",
+        "date_trunc",
+        "max",
+        "min",
+        "round",
+        "sum",
+        "timestamp_trunc",
+    }
+)
+SYSTEM_CATALOG_NAMES: Final = frozenset({"information_schema", "pg_catalog"})
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -196,35 +204,6 @@ def _ensure_bounded_select_shape(expression: exp.Expression) -> None:
     Returns:
         None.
     """
-    if any(expression.find_all(exp.CTE)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_cte",
-            message="analytics SQL에서는 CTE를 허용하지 않습니다.",
-        )
-
-    if any(expression.find_all(exp.Subquery, exp.Lateral)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_subquery",
-            message="analytics SQL에서는 subquery/lateral query를 허용하지 않습니다.",
-        )
-
-    nested_selects = (
-        nested_select
-        for nested_select in expression.find_all(exp.Select)
-        if nested_select is not expression
-    )
-    if any(nested_selects):
-        raise SqlPolicyViolationError(
-            reason="disallowed_subquery",
-            message="analytics SQL에서는 subquery/lateral query를 허용하지 않습니다.",
-        )
-
-    if any(expression.find_all(exp.Join)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_join",
-            message="analytics SQL에서는 join을 허용하지 않습니다.",
-        )
-
     if any(expression.find_all(exp.Into)):
         raise SqlPolicyViolationError(
             reason="disallowed_select_into",
@@ -237,42 +216,45 @@ def _ensure_bounded_select_shape(expression: exp.Expression) -> None:
             message="analytics SQL에서는 locking read를 허용하지 않습니다.",
         )
 
-    if any(expression.find_all(exp.Offset)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_offset",
-            message="analytics SQL에서는 OFFSET을 허용하지 않습니다.",
-        )
-
-    if any(expression.find_all(exp.Distinct)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_distinct",
-            message="analytics SQL에서는 DISTINCT를 허용하지 않습니다.",
-        )
-
     if any(expression.find_all(exp.TableSample)):
         raise SqlPolicyViolationError(
             reason="disallowed_table_sample",
             message="analytics SQL에서는 TABLESAMPLE을 허용하지 않습니다.",
         )
 
-    if any(expression.find_all(exp.Group)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_grouping",
-            message="analytics SQL에서는 GROUP BY를 허용하지 않습니다.",
-        )
+    _ensure_function_surface_is_allowlisted(expression)
 
-    for ordered in expression.find_all(exp.Ordered):
-        if isinstance(ordered.this, exp.Literal):
+
+def _ensure_function_surface_is_allowlisted(expression: exp.Expression) -> None:
+    """Reject functions outside the small analytics function allowlist.
+
+    Args:
+        expression: Parsed SELECT expression.
+
+    Returns:
+        None.
+    """
+    for function in expression.find_all(exp.Func):
+        function_name = _normalized_function_name(function)
+        if function_name not in ALLOWED_FUNCTION_NAMES:
             raise SqlPolicyViolationError(
-                reason="disallowed_ordinal_order",
-                message="analytics SQL에서는 ordinal ORDER BY를 허용하지 않습니다.",
+                reason="disallowed_function",
+                message=f"analytics SQL에서는 허용되지 않은 함수입니다: {function_name}",
             )
 
-    if any(expression.find_all(exp.Func)):
-        raise SqlPolicyViolationError(
-            reason="disallowed_function",
-            message="analytics SQL에서는 함수 호출을 허용하지 않습니다.",
-        )
+
+def _normalized_function_name(function: exp.Func) -> str:
+    """Return a stable lowercase function name from a sqlglot function node.
+
+    Args:
+        function: Parsed sqlglot function node.
+
+    Returns:
+        Lowercase function name used by the policy allowlist.
+    """
+    if isinstance(function, exp.Anonymous):
+        return function.name.lower()
+    return function.sql_name().lower()
 
 
 def _extract_referenced_relations(expression: exp.Expression) -> set[str]:
@@ -294,7 +276,14 @@ def _extract_referenced_relations(expression: exp.Expression) -> set[str]:
         relation_name = table.name.lower()
         if relation_name in cte_names:
             continue
-        if table.db or table.catalog:
+        schema_name = table.db.lower()
+        catalog_name = table.catalog.lower()
+        if schema_name in SYSTEM_CATALOG_NAMES or catalog_name in SYSTEM_CATALOG_NAMES:
+            raise SqlPolicyViolationError(
+                reason="disallowed_system_catalog",
+                message="system catalog/schema relation은 허용하지 않습니다.",
+            )
+        if schema_name or catalog_name:
             raise SqlPolicyViolationError(
                 reason="cross_schema_relation",
                 message="schema/catalog qualified relation은 허용하지 않습니다.",

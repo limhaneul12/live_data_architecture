@@ -1,3 +1,4 @@
+import pytest
 from app.event_analytics.application.explore_query_service import ExploreQueryService
 from app.event_analytics.application.query_policy import (
     MAX_QUERY_TEXT_LENGTH,
@@ -155,6 +156,25 @@ def test_query_endpoint_returns_rows_and_chart_for_valid_select() -> None:
     }
 
 
+def test_query_endpoint_writes_audit_logs_for_valid_select(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client, _repository = build_client()
+
+    with caplog.at_level(
+        "INFO", logger="app.event_analytics.application.sql_query_service"
+    ):
+        response = client.post(
+            "/analytics/query",
+            json={"sql": "SELECT event_type, event_count FROM event_type_counts"},
+        )
+
+    assert response.status_code == 200
+    assert "analytics SQL accepted sql_sha256=" in caplog.text
+    assert "relations=event_type_counts" in caplog.text
+    assert "analytics SQL completed sql_sha256=" in caplog.text
+
+
 def test_explore_query_endpoint_executes_structured_dataset_query() -> None:
     client, repository = build_client()
 
@@ -236,6 +256,22 @@ def test_query_endpoint_returns_400_for_mutation_sql() -> None:
     }
 
 
+def test_query_endpoint_writes_audit_log_for_policy_rejection(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client, _repository = build_client()
+
+    with caplog.at_level(
+        "WARNING",
+        logger="app.event_analytics.application.sql_query_service",
+    ):
+        response = client.post("/analytics/query", json={"sql": "DROP TABLE events"})
+
+    assert response.status_code == 400
+    assert "analytics SQL rejected sql_sha256=" in caplog.text
+    assert "reason=non_select_statement" in caplog.text
+
+
 def test_query_endpoint_returns_400_for_raw_events_table() -> None:
     client, _repository = build_client()
 
@@ -256,7 +292,7 @@ def test_query_endpoint_returns_400_for_read_only_function_attack() -> None:
     assert response.status_code == 400
     assert response.json() == {
         "error_code": "sql_policy_violation",
-        "message": "analytics SQL에서는 함수 호출을 허용하지 않습니다.",
+        "message": "analytics SQL에서는 허용되지 않은 함수입니다: pg_sleep",
         "rejected_reason": "disallowed_function",
     }
 

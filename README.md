@@ -169,6 +169,13 @@ ORDER BY event_count DESC, event_type;
 SELECT event_hour, event_type, event_count
 FROM hourly_event_counts
 ORDER BY event_hour, event_type;
+
+SELECT e.event_type, SUM(p.event_count) AS product_events
+FROM event_type_counts AS e
+JOIN product_event_counts AS p
+  ON e.event_type = p.event_type
+GROUP BY e.event_type
+ORDER BY product_events DESC;
 ```
 
 Manual SQL 실행은 서버에서 parser 기반으로 제한합니다.
@@ -177,6 +184,9 @@ Manual SQL 실행은 서버에서 parser 기반으로 제한합니다.
 - 한 번에 statement 하나만 허용합니다.
 - raw `events` table 직접 조회는 거부합니다.
 - allowlisted generated view만 조회할 수 있습니다.
+- `JOIN`, `WHERE`, `GROUP BY`, read-only CTE/subquery는 허용하되, 참조 relation은 모두 generated view allowlist 안에 있어야 합니다.
+- 함수는 `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `ROUND`, `DATE_TRUNC` 같은 좁은 allowlist만 허용하고 `pg_sleep`, `pg_advisory_lock`, `set_config`, `version` 같은 함수는 거부합니다.
+- `information_schema`, `pg_catalog` 같은 system catalog/schema 접근은 거부합니다.
 - 결과 row는 최대 500개로 제한합니다.
 - PostgreSQL read-only transaction으로 실행합니다.
 - Docker Compose에서는 `analytics_reader` DB role을 생성하고 generated view에만 `SELECT` 권한을 부여합니다. SQL Lab/Explore query는 `ANALYTICS_DATABASE_DB_ADDRESS`가 있으면 이 read-only DSN을 사용합니다.
